@@ -1,0 +1,57 @@
+import type { RequestHandler } from "express";
+import { parseRequest } from "../../../shared/http/validate.ts";
+import type { CreateTransaction } from "../application/create-transaction.ts";
+import type { DeleteTransaction } from "../application/delete-transaction.ts";
+import type { ListTransactions } from "../application/list-transactions.ts";
+import type { UpdateTransaction } from "../application/update-transaction.ts";
+import {
+  createTransactionBodySchema,
+  listTransactionsQuerySchema,
+  toTransactionDto,
+  transactionIdParamsSchema,
+  updateTransactionBodySchema,
+} from "./transaction.schemas.ts";
+
+export type TransactionUseCases = {
+  listTransactions: ListTransactions;
+  createTransaction: CreateTransaction;
+  updateTransaction: UpdateTransaction;
+  deleteTransaction: DeleteTransaction;
+};
+
+/**
+ * Controller sengaja tipis. Tugasnya hanya tiga:
+ * 1) validasi request, 2) panggil use case, 3) bentuk response.
+ * Tidak ada try/catch karena Express 5 meneruskan error async ke errorHandler.
+ */
+export function createTransactionController(useCases: TransactionUseCases) {
+  const list: RequestHandler = async (req, res) => {
+    const filter = parseRequest(listTransactionsQuerySchema, req.query);
+    const transactions = await useCases.listTransactions.execute(filter);
+    res.json({ data: transactions.map(toTransactionDto) });
+  };
+
+  const create: RequestHandler = async (req, res) => {
+    const body = parseRequest(createTransactionBodySchema, req.body);
+    const { occurred_at, ...rest } = body;
+    const transaction = await useCases.createTransaction.execute({ ...rest, occurredAt: occurred_at });
+    res.status(201).json({ data: toTransactionDto(transaction) });
+  };
+
+  const update: RequestHandler = async (req, res) => {
+    const { id } = parseRequest(transactionIdParamsSchema, req.params);
+    const { occurred_at, ...rest } = parseRequest(updateTransactionBodySchema, req.body);
+    const transaction = await useCases.updateTransaction.execute(id, { ...rest, occurredAt: occurred_at });
+    res.json({ data: toTransactionDto(transaction) });
+  };
+
+  const remove: RequestHandler = async (req, res) => {
+    const { id } = parseRequest(transactionIdParamsSchema, req.params);
+    await useCases.deleteTransaction.execute(id);
+    res.status(204).end();
+  };
+
+  return { list, create, update, remove };
+}
+
+export type TransactionController = ReturnType<typeof createTransactionController>;

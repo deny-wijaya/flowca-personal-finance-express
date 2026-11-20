@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "target": "es2024",
+    "lib": ["es2024"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // Node menjalankan file .ts secara langsung (type stripping), jadi hanya
+    // syntax TypeScript yang bisa "dihapus" yang diizinkan: tanpa enum,
+    // tanpa namespace, dan tanpa parameter property di constructor.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    // Import ditulis dengan ekstensi .ts, lalu tsc menggantinya menjadi .js saat build.
+    "rewriteRelativeImportExtensions": true,
+
+    "skipLibCheck": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "sourceMap": true
+  },
+  "include": ["src"]
+}
