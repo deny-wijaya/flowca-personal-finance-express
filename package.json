@@ -19,7 +19,11 @@
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
     "db:seed": "node --env-file-if-exists=.env src/scripts/seed.ts",
-    "test:db": "TEST_DATABASE_URL=postgres://finance:finance@localhost:5433/personal_finance_test vitest run src/modules/transaction/infrastructure"
+    "test:db": "TEST_DATABASE_URL=postgres://finance:finance@localhost:5433/personal_finance_test vitest run src/modules/transaction/infrastructure",
+    "test:arch": "vitest run src/architecture.test.ts",
+    "db:check": "drizzle-kit check && drizzle-kit generate && git diff --exit-code -- drizzle && test -z \"$(git ls-files --others --exclude-standard drizzle)\"",
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
+    "prepare": "git config core.hooksPath .githooks || true"
   },
   "dependencies": {
     "cors": "^2.8.6",

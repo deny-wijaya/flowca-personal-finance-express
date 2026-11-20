@@ -52,6 +52,17 @@ export default defineConfig([
     },
   },
   {
+    // Env hanya dibaca dan divalidasi di satu tempat.
+    files: ["src/**/*.ts"],
+    ignores: ["src/config/env.ts", "**/*.test.ts"],
+    rules: {
+      "no-restricted-properties": [
+        "error",
+        { object: "process", property: "env", message: "Baca env lewat loadEnv() dari src/config/env.ts, bukan process.env." },
+      ],
+    },
+  },
+  {
     files: ["src/modules/*/presentation/**"],
     ignores: ["**/*.test.ts"],
     rules: {
