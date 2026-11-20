@@ -4,12 +4,22 @@ Backend REST API untuk [`next-personal-finance`](../next-personal-finance). Scop
 
 ## Menjalankan
 
-Butuh Node 24 atau lebih baru.
+Butuh Node 24 atau lebih baru dan Docker (untuk Postgres).
 
 ```bash
 npm install
 cp .env.example .env
-npm run dev          # http://localhost:4000/api/v1, auto-restart saat file berubah
+docker compose up -d --wait   # Postgres 18 di localhost:5433
+npm run db:migrate            # buat tabel transactions
+npm run db:seed               # isi 8 transaksi contoh bulan berjalan
+npm run dev                   # http://localhost:4000/api/v1, auto-restart saat file berubah
+```
+
+Untuk `npm run test:db`, buat database test sekali saja:
+
+```bash
+docker compose exec postgres createdb -U finance personal_finance_test
+DATABASE_URL=postgres://finance:finance@localhost:5433/personal_finance_test npm run db:migrate
 ```
 
 Lalu di `next-personal-finance/.env.local`, isi `DATA_SOURCE=api` dan `API_BASE_URL=http://localhost:4000/api/v1`. Setelah itu menu **Dashboard** dan **Transaksi** di frontend membaca data dari API ini.
@@ -33,7 +43,12 @@ curl -X POST localhost:4000/api/v1/transactions \
 | `npm start` | Menjalankan hasil build, dipakai di production |
 | `npm run typecheck` | Cek tipe TypeScript |
 | `npm run lint` | ESLint, termasuk aturan arah dependency antar layer |
-| `npm test` | Vitest (unit test dan test HTTP dengan supertest) |
+| `npm test` | Vitest (unit test dan test HTTP dengan supertest), tanpa database |
+| `npm run test:db` | Test repository Postgres ke database `personal_finance_test` |
+| `npm run db:generate` | Buat file migration baru di `drizzle/` dari perubahan `*.table.ts` |
+| `npm run db:migrate` | Jalankan migration yang belum dijalankan ke `DATABASE_URL` |
+| `npm run db:studio` | Buka tampilan web untuk melihat isi tabel |
+| `npm run db:seed` | Isi transaksi contoh (aman dijalankan berkali-kali) |
 
 ## Struktur folder
 
@@ -43,15 +58,17 @@ src/
 ├── app.ts                  # createApp(): middleware + routes, tanpa listen (dipakai test)
 ├── config/env.ts           # Satu-satunya file yang membaca process.env
 ├── di/container.ts         # Composition root: repository -> use case -> controller
+├── scripts/seed.ts         # Isi data contoh ke database
 ├── shared/
 │   ├── domain/errors.ts    # DomainError, ValidationError, NotFoundError
+│   ├── database/           # createDatabase(): pool pg + Drizzle
 │   ├── http/               # HttpError, parseRequest (zod), middleware 404 dan error handler
 │   └── logger/             # Pino
 └── modules/
     └── transaction/
         ├── domain/         # Entity, aturan bisnis, interface repository
         ├── application/    # Use case: List, Create, Update, Delete
-        ├── infrastructure/ # Implementasi repository (in-memory, nanti Postgres)
+        ├── infrastructure/ # Schema tabel Drizzle, repository Postgres dan in-memory (untuk test)
         └── presentation/   # Router, controller, schema request/response
 ```
 

@@ -19,6 +19,8 @@ const envSchema = z.object({
         .filter(Boolean),
     ),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
+  // Wajib, tanpa default: server harus berhenti kalau lupa diisi, bukan diam-diam memakai database lain.
+  DATABASE_URL: z.string().startsWith("postgres://", "DATABASE_URL harus diawali postgres://"),
 });
 
 export type Env = z.infer<typeof envSchema>;

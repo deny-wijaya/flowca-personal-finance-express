@@ -6,8 +6,9 @@ import { createLogger } from "./shared/logger/logger.ts";
 /** Entry point: baca env, rakit dependency, lalu jalankan server HTTP. */
 const env = loadEnv();
 const logger = createLogger({ level: env.LOG_LEVEL, pretty: env.NODE_ENV === "development" });
+const container = createContainer({ databaseUrl: env.DATABASE_URL });
 const app = createApp({
-  container: createContainer(),
+  container,
   logger,
   apiPrefix: env.API_PREFIX,
   corsOrigins: env.CORS_ORIGINS,
@@ -24,10 +25,14 @@ const server = app.listen(env.PORT, (error) => {
 /**
  * Graceful shutdown: saat proses diminta berhenti (Ctrl+C atau deploy baru),
  * server berhenti menerima koneksi baru tetapi menyelesaikan request yang sedang berjalan.
+ * Pool database baru ditutup setelah itu, karena request yang sedang berjalan mungkin masih butuh database.
  */
 function shutdown(signal: NodeJS.Signals) {
   logger.info(`${signal} diterima, server dimatikan...`);
-  server.close(() => process.exit(0));
+  server.close(async () => {
+    await container.close();
+    process.exit(0);
+  });
   setTimeout(() => process.exit(1), 10_000).unref();
 }
 process.on("SIGINT", shutdown);
