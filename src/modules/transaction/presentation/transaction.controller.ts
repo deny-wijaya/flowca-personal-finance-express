@@ -4,6 +4,7 @@ import type { CreateTransaction } from "../application/create-transaction.ts";
 import type { DeleteTransaction } from "../application/delete-transaction.ts";
 import type { ListTransactions } from "../application/list-transactions.ts";
 import type { UpdateTransaction } from "../application/update-transaction.ts";
+import type { GetTransaction } from "../application/get-transaction.ts";
 import {
   createTransactionBodySchema,
   listTransactionsQuerySchema,
@@ -12,8 +13,10 @@ import {
   updateTransactionBodySchema,
 } from "./transaction.schemas.ts";
 
+
 export type TransactionUseCases = {
   listTransactions: ListTransactions;
+  getTransaction: GetTransaction
   createTransaction: CreateTransaction;
   updateTransaction: UpdateTransaction;
   deleteTransaction: DeleteTransaction;
@@ -30,6 +33,12 @@ export function createTransactionController(useCases: TransactionUseCases) {
     const transactions = await useCases.listTransactions.execute(filter);
     res.json({ data: transactions.map(toTransactionDto) });
   };
+
+  const get: RequestHandler = async (req, res) => {
+    const {id} = parseRequest(transactionIdParamsSchema, req.params);
+   const transaction = await useCases.getTransaction.execute(id);
+    res.json({ data: toTransactionDto(transaction) });
+  }
 
   const create: RequestHandler = async (req, res) => {
     const body = parseRequest(createTransactionBodySchema, req.body);
@@ -51,7 +60,7 @@ export function createTransactionController(useCases: TransactionUseCases) {
     res.status(204).end();
   };
 
-  return { list, create, update, remove };
+  return { list, create, update, remove, get };
 }
 
 export type TransactionController = ReturnType<typeof createTransactionController>;

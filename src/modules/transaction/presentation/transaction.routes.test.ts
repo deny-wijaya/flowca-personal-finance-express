@@ -18,6 +18,7 @@ function buildApp() {
 }
 
 const gojek = {
+  id: "seed-1",
   type: "expense",
   amount: 64_000,
   category: "Transportasi",
@@ -29,6 +30,15 @@ describe("/api/v1/transactions", () => {
   let app: ReturnType<typeof buildApp>;
   beforeEach(() => {
     app = buildApp();
+  });
+
+  it("GET mengembalikan transaksi dengan id seed-1", async () => {
+    const created = await request(app).post("/api/v1/transactions").send(gojek).expect(201);
+
+    const idWrong = created.body.data.id
+
+    const res = await request(app).get(`/api/v1/transactions/${idWrong}`).expect(200);
+    expect(created.body.data.id).toBe(res.body.data.id)
   });
 
   it("POST membuat transaksi dan GET mengembalikannya dalam envelope { data }", async () => {

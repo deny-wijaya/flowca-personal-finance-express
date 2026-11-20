@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import cors from "cors";
-import express, { type Express } from "express";
+import express, { Router, type Express } from "express";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import type { Container } from "./di/container.ts";
@@ -22,6 +22,12 @@ export type AppOptions = {
  *
  * Urutan middleware penting: logging -> security -> parsing body -> routes -> 404 -> error handler.
  */
+export function createRouterApp(container: Container): Router {
+  const router = Router();
+  router.use("/transactions", createTransactionRouter(container.transactionController))
+  return router;
+}
+
 export function createApp({ container, logger, apiPrefix, corsOrigins }: AppOptions): Express {
   const app = express();
 
@@ -46,7 +52,10 @@ export function createApp({ container, logger, apiPrefix, corsOrigins }: AppOpti
     res.json({ data: { status: "ok", uptime_seconds: Math.round(process.uptime()) } });
   });
 
-  app.use(`${apiPrefix}/transactions`, createTransactionRouter(container.transactionController));
+
+  app.use(apiPrefix, createRouterApp(container))
+
+  // app.use(`${apiPrefix}/transactions`, createTransactionRouter(container.transactionController));
 
   app.use(notFoundHandler);
   app.use(errorHandler);
