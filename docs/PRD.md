@@ -299,6 +299,6 @@ Tambahkan endpoint `GET /transactions/:id` yang membalas satu transaksi atau `40
 ## 12. Pertanyaan Terbuka
 
 1. Apakah perhitungan per bulan memakai zona waktu `Asia/Jakarta` tetap, atau mengikuti zona waktu yang dikirim frontend?
-2. Untuk Fase 1, mau memakai Prisma (ORM, lebih banyak hal otomatis) atau Drizzle (lebih dekat ke SQL, lebih banyak belajar SQL)? Rekomendasiku Drizzle, karena tujuan utamamu belajar backend dan Drizzle memaksa kamu memahami query yang dijalankan.
+2. ~~Untuk Fase 1, mau memakai Prisma atau Drizzle?~~ **Diputuskan 15 Nov 2026: Drizzle** (drizzle-orm + drizzle-kit, driver `pg`), karena query-nya dekat dengan SQL sehingga sekalian belajar SQL.
 3. Kategori tetap disimpan sebagai teks, atau dibuat tabel `categories` sejak Fase 1 supaya kategori kustom (Epic D) lebih mudah?
 4. Target deploy: VPS (belajar lebih banyak soal server) atau platform seperti Railway atau Fly.io (lebih cepat)?
