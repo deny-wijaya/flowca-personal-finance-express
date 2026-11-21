@@ -1,6 +1,6 @@
 # Project rules
 
-- Read `docs/PRD.md` for scope, the API contract (section 5), and the learning roadmap (section 10) before adding features. The API contract must stay compatible with `../next-personal-finance/docs/PRD.md` section 8.4 and `../next-personal-finance/src/modules/*/infrastructure/*-dto.ts`.
+- Read `docs/PRD.md` for scope and the learning roadmap (section 10) before adding features. The API contract lives only in `docs/API-CONTRACT.md` (shared with the frontend): change it there first, then the code. It must stay compatible with `../next-personal-finance/src/modules/*/infrastructure/*-dto.ts`.
 - Clean architecture per module in `src/modules/<feature>/{domain,application,infrastructure,presentation}`. Dependencies point inward only; `eslint.config.js` enforces this.
 - Only `src/config/env.ts` reads `process.env`. Only `src/di/container.ts` instantiates concrete classes.
 - Node runs `.ts` directly (type stripping): no `enum`, no `namespace`, no constructor parameter properties. Relative imports use the `.ts` extension.

@@ -41,7 +41,7 @@ Layer tidak boleh punya subfolder, dan file di `presentation/` wajib memakai sal
 - Hanya `src/config/env.ts` yang membaca `process.env`. Env divalidasi dengan zod saat server start.
 - Node menjalankan file `.ts` langsung (type stripping), jadi import relatif wajib memakai ekstensi `.ts`, dan `enum`, `namespace`, serta parameter property di constructor dilarang (dicek `erasableSyntaxOnly` di `tsconfig.json`).
 - Controller tidak memakai try/catch. Express 5 meneruskan error async ke `errorHandler`.
-- Response sukses berbentuk `{ data }`, response gagal berbentuk `{ error: { code, message, details? } }`, dan field JSON memakai `snake_case`. Kontrak lengkapnya ada di `PRD.md` bagian 5 dan harus tetap cocok dengan frontend.
+- Response sukses berbentuk `{ data }`, response gagal berbentuk `{ error: { code, message, details? } }`, dan field JSON memakai `snake_case`. Kontrak lengkapnya ada di `API-CONTRACT.md` dan harus tetap cocok dengan frontend.
 
 ## Migration database
 

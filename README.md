@@ -274,5 +274,6 @@ docs/                       # PRD and the architecture contract
 
 The docs below are written in Indonesian.
 
-- [`docs/PRD.md`](docs/PRD.md) covers scope, the API contract, and the learning roadmap.
+- [`docs/PRD.md`](docs/PRD.md) covers scope and the learning roadmap.
+- [`docs/API-CONTRACT.md`](docs/API-CONTRACT.md) is the API contract shared with the frontend.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) covers the architecture rules and how to add a new feature.

@@ -1,5 +1,5 @@
 import type { ErrorRequestHandler } from "express";
-import { DomainError, NotFoundError, ValidationError } from "../../domain/errors.ts";
+import { ConflictError, DomainError, NotFoundError, ValidationError } from "../../domain/errors.ts";
 import { HttpError } from "../http-error.ts";
 
 type ErrorBody = { error: { code: string; message: string; details?: unknown } };
@@ -33,6 +33,10 @@ function toErrorResponse(err: unknown): { status: number; body: ErrorBody } {
   if (err instanceof ValidationError) {
     const details = err.field ? { fieldErrors: { [err.field]: [err.message] } } : undefined;
     return { status: 400, body: { error: { code: err.code, message: err.message, details } } };
+  }
+  if (err instanceof ConflictError) {
+    const details = err.field ? { fieldErrors: { [err.field]: [err.message] } } : undefined;
+    return { status: 409, body: { error: { code: err.code, message: err.message, details } } };
   }
   if (err instanceof NotFoundError) {
     return { status: 404, body: { error: { code: err.code, message: err.message } } };

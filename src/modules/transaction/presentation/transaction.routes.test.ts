@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../../app.ts";
 import { createContainer } from "../../../di/container.ts";
+import { InMemoryUserRepository } from "../../auth/infrastructure/in-memory-user-repository.ts";
 import { InMemoryTransactionRepository } from "../infrastructure/in-memory-transaction-repository.ts";
 
 /**
@@ -12,6 +13,7 @@ import { InMemoryTransactionRepository } from "../infrastructure/in-memory-trans
 function buildApp() {
   const container = createContainer({
     transactionRepository: new InMemoryTransactionRepository(),
+    userRepository: new InMemoryUserRepository(),
     clock: { now: () => new Date("2026-11-14T10:00:00+07:00") },
   });
   return createApp({ container, logger: pino({ level: "silent" }), apiPrefix: "/api/v1", corsOrigins: [] });
