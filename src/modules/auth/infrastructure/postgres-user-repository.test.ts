@@ -33,6 +33,12 @@ describe.skipIf(!url)("PostgresUserRepository", () => {
     expect(await repository.findByEmail("rani@email.com")).toEqual(created);
   });
 
+  it("findById mengembalikan user, atau null untuk id yang tidak ada", async () => {
+    const created = await repository.create(rani);
+    expect(await repository.findById(created.id)).toEqual(created);
+    expect(await repository.findById("usr_tidak_ada")).toBeNull();
+  });
+
   it("findByEmail mengembalikan null untuk email yang tidak terdaftar", async () => {
     expect(await repository.findByEmail("tidak.ada@email.com")).toBeNull();
   });

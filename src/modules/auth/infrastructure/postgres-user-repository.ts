@@ -20,6 +20,11 @@ export class PostgresUserRepository implements UserRepository {
     return row ?? null;
   }
 
+  async findById(id: string): Promise<User | null> {
+    const [row] = await this.#db.select().from(users).where(eq(users.id, id));
+    return row ?? null;
+  }
+
   async create(input: NewUser): Promise<User> {
     try {
       const [row] = await this.#db

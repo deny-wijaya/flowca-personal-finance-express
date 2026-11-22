@@ -10,6 +10,10 @@ export class InMemoryUserRepository implements UserRepository {
     return [...this.#rows.values()].find((user) => user.email === email) ?? null;
   }
 
+  async findById(id: string): Promise<User | null> {
+    return this.#rows.get(id) ?? null;
+  }
+
   async create(input: NewUser): Promise<User> {
     // Meniru unique constraint di Postgres.
     if (await this.findByEmail(input.email)) throw new EmailAlreadyRegisteredError();

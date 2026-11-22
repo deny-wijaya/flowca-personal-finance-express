@@ -1,5 +1,7 @@
 import type { RequestHandler } from "express";
+import { authOf } from "../../../shared/http/middlewares/require-auth.ts";
 import { parseRequest } from "../../../shared/http/validate.ts";
+import type { GetCurrentUser } from "../application/get-current-user.ts";
 import type { LoginUser } from "../application/login-user.ts";
 import type { RegisterUser } from "../application/register-user.ts";
 import { loginBodySchema, registerBodySchema, toAccessTokenDto, toUserDto } from "./auth.schemas.ts";
@@ -7,6 +9,7 @@ import { loginBodySchema, registerBodySchema, toAccessTokenDto, toUserDto } from
 export type AuthUseCases = {
   registerUser: RegisterUser;
   loginUser: LoginUser;
+  getCurrentUser: GetCurrentUser;
 };
 
 /**
@@ -27,7 +30,13 @@ export function createAuthController(useCases: AuthUseCases) {
     res.json({ data: toAccessTokenDto(accessToken) });
   };
 
-  return { register, login };
+  /** Route ini dipasangi requireAuth, jadi `req.auth` sudah berisi id user dari token. */
+  const me: RequestHandler = async (req, res) => {
+    const user = await useCases.getCurrentUser.execute(authOf(req).userId);
+    res.json({ data: toUserDto(user) });
+  };
+
+  return { register, login, me };
 }
 
 export type AuthController = ReturnType<typeof createAuthController>;
