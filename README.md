@@ -35,6 +35,9 @@ The Flowca frontend (Next.js) calls this API from its server to read and write t
 | `DELETE` | `/api/v1/transactions/:id` | Delete a transaction, responds with `204` |
 | `POST` | `/api/v1/auth/register` | Create an account, responds with `201` (password hashed with argon2) |
 | `POST` | `/api/v1/auth/login` | Exchange email and password for a JWT access token |
+| `GET` | `/api/v1/auth/me` | Profile of the signed-in user |
+
+All `/api/v1/transactions` endpoints and `/api/v1/auth/me` require `Authorization: Bearer <access_token>` and respond with `401 UNAUTHORIZED` without a valid token.
 
 Every response uses the same envelope, and JSON fields are `snake_case`. Amounts are whole Rupiah, and dates are ISO 8601 (responses are always in UTC).
 

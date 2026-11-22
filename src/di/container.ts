@@ -1,10 +1,13 @@
+import { GetCurrentUser } from "../modules/auth/application/get-current-user.ts";
 import { LoginUser } from "../modules/auth/application/login-user.ts";
 import { RegisterUser } from "../modules/auth/application/register-user.ts";
 import type { PasswordHasher } from "../modules/auth/domain/password-hasher.ts";
 import type { TokenIssuer } from "../modules/auth/domain/token-issuer.ts";
+import type { TokenVerifier } from "../modules/auth/domain/token-verifier.ts";
 import type { UserRepository } from "../modules/auth/domain/user-repository.ts";
 import { Argon2PasswordHasher } from "../modules/auth/infrastructure/argon2-password-hasher.ts";
 import { JoseTokenIssuer } from "../modules/auth/infrastructure/jose-token-issuer.ts";
+import { JoseTokenVerifier } from "../modules/auth/infrastructure/jose-token-verifier.ts";
 import { PostgresUserRepository } from "../modules/auth/infrastructure/postgres-user-repository.ts";
 import { createAuthController } from "../modules/auth/presentation/auth.controller.ts";
 import { systemClock, type Clock } from "../modules/transaction/application/clock.ts";
@@ -30,11 +33,12 @@ export type ContainerOverrides = {
   transactionRepository?: TransactionRepository;
   userRepository?: UserRepository;
   passwordHasher?: PasswordHasher;
-  /** Wajib diisi kalau `tokenIssuer` tidak diberikan. */
+  /** Wajib diisi kalau `tokenIssuer` atau `tokenVerifier` tidak diberikan. */
   jwtSecret?: string;
   /** Masa berlaku access token dalam detik. Bawaannya 1 hari. */
   jwtExpiresIn?: number;
   tokenIssuer?: TokenIssuer;
+  tokenVerifier?: TokenVerifier;
   clock?: Clock;
 };
 
@@ -47,6 +51,7 @@ export function createContainer(overrides: ContainerOverrides = {}) {
   const userRepository = overrides.userRepository ?? new PostgresUserRepository(database!.db);
   const passwordHasher = overrides.passwordHasher ?? new Argon2PasswordHasher();
   const tokenIssuer = overrides.tokenIssuer ?? createTokenIssuer(overrides);
+  const tokenVerifier = overrides.tokenVerifier ?? new JoseTokenVerifier({ secret: requireJwtSecret(overrides) });
 
   const transactionController = createTransactionController({
     listTransactions: new ListTransactions(transactionRepository),
@@ -59,17 +64,23 @@ export function createContainer(overrides: ContainerOverrides = {}) {
   const authController = createAuthController({
     registerUser: new RegisterUser(userRepository, passwordHasher),
     loginUser: new LoginUser(userRepository, passwordHasher, tokenIssuer),
+    getCurrentUser: new GetCurrentUser(userRepository),
   });
 
   // Satu pool dipakai bersama oleh semua repository Postgres, dan ditutup sekali saat shutdown.
   const close = database ? database.close : async () => {};
 
-  return { transactionController, authController, close };
+  // tokenVerifier dipakai app.ts untuk membuat middleware requireAuth.
+  return { transactionController, authController, tokenVerifier, close };
 }
 
-function createTokenIssuer({ jwtSecret, jwtExpiresIn = 86_400 }: ContainerOverrides): TokenIssuer {
-  if (!jwtSecret) throw new Error("createContainer butuh jwtSecret kalau tokenIssuer tidak diberikan");
-  return new JoseTokenIssuer({ secret: jwtSecret, expiresIn: jwtExpiresIn });
+function createTokenIssuer(overrides: ContainerOverrides): TokenIssuer {
+  return new JoseTokenIssuer({ secret: requireJwtSecret(overrides), expiresIn: overrides.jwtExpiresIn ?? 86_400 });
+}
+
+function requireJwtSecret({ jwtSecret }: ContainerOverrides): string {
+  if (!jwtSecret) throw new Error("createContainer butuh jwtSecret kalau tokenIssuer atau tokenVerifier tidak diberikan");
+  return jwtSecret;
 }
 
 function openDatabase(databaseUrl: string | undefined) {

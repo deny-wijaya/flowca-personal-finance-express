@@ -122,3 +122,32 @@ describe("POST /api/v1/auth/login", () => {
     expect(Object.keys(res.body.error.details.fieldErrors).sort()).toEqual(["email", "password"]);
   });
 });
+
+describe("GET /api/v1/auth/me", () => {
+  let app: ReturnType<typeof buildApp>;
+  beforeEach(() => {
+    app = buildApp();
+  });
+
+  it("200 dengan UserDto milik pemilik token", async () => {
+    await request(app).post("/api/v1/auth/register").send(rani).expect(201);
+    const login = await request(app).post("/api/v1/auth/login").send(rani).expect(200);
+
+    const res = await request(app)
+      .get("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${login.body.data.access_token}`)
+      .expect(200);
+
+    expect(res.body.data).toMatchObject({ name: "Rani Putri", email: "rani@email.com" });
+    expect(res.body.data).not.toHaveProperty("password_hash");
+  });
+
+  it("401 UNAUTHORIZED tanpa header Authorization", async () => {
+    const res = await request(app).get("/api/v1/auth/me").expect(401);
+    expect(res.body.error.code).toBe("UNAUTHORIZED");
+  });
+
+  it("401 UNAUTHORIZED kalau header bukan format Bearer", async () => {
+    await request(app).get("/api/v1/auth/me").set("Authorization", "Basic cmFuaTpyYWhhc2lh").expect(401);
+  });
+});

@@ -49,16 +49,27 @@ Pesan error 4xx ditulis dalam bahasa Indonesia karena frontend menampilkannya la
 
 ## 3. Daftar endpoint
 
-| Method | Path | Query / Body | Response `data` |
-|---|---|---|---|
-| `GET` | `/health` (tanpa prefix) | - | `{ status, uptime_seconds }` |
-| `GET` | `/transactions` | `from`, `to` (ISO 8601), `type` (`income` / `expense`), semua opsional | `TransactionDto[]` |
-| `GET` | `/transactions/:id` | - | `TransactionDto` |
-| `POST` | `/transactions` | `{ type, amount, category, note?, occurred_at }` | `TransactionDto`, status `201` |
-| `PATCH` | `/transactions/:id` | Minimal satu field dari body `POST` | `TransactionDto` |
-| `DELETE` | `/transactions/:id` | - | Kosong, status `204` |
-| `POST` | `/auth/register` | `{ name, email, password }` | `UserDto`, status `201` (Fase 2, lihat 4.1) |
-| `POST` | `/auth/login` | `{ email, password }` | `{ access_token, expires_in }` (Fase 2, lihat 4.2) |
+| Method | Path | Login | Query / Body | Response `data` |
+|---|---|---|---|---|
+| `GET` | `/health` (tanpa prefix) | Tidak | - | `{ status, uptime_seconds }` |
+| `GET` | `/transactions` | Wajib | `from`, `to` (ISO 8601), `type` (`income` / `expense`), semua opsional | `TransactionDto[]` |
+| `GET` | `/transactions/:id` | Wajib | - | `TransactionDto` |
+| `POST` | `/transactions` | Wajib | `{ type, amount, category, note?, occurred_at }` | `TransactionDto`, status `201` |
+| `PATCH` | `/transactions/:id` | Wajib | Minimal satu field dari body `POST` | `TransactionDto` |
+| `DELETE` | `/transactions/:id` | Wajib | - | Kosong, status `204` |
+| `POST` | `/auth/register` | Tidak | `{ name, email, password }` | `UserDto`, status `201` (lihat 4.1) |
+| `POST` | `/auth/login` | Tidak | `{ email, password }` | `{ access_token, expires_in }` (lihat 4.2) |
+| `GET` | `/auth/me` | Wajib | - | `UserDto` (lihat 4.3) |
+
+**Endpoint yang wajib login** harus membawa header `Authorization: Bearer <access_token>`, dengan token dari `POST /auth/login`. Kalau header tidak ada, token-nya rusak, tanda tangannya tidak cocok, atau sudah kedaluwarsa, API membalas `401 UNAUTHORIZED`:
+
+```json
+{ "error": { "code": "UNAUTHORIZED", "message": "Sesi kamu sudah habis. Silakan masuk lagi." } }
+```
+
+Kalau header `Authorization` tidak ada sama sekali, `message` berisi "Kamu perlu masuk dulu." Frontend cukup memeriksa `code`, bukan isi `message`.
+
+Frontend sebaiknya menghapus token yang tersimpan dan mengarahkan pengguna ke layar Login setiap kali menerima `401 UNAUTHORIZED`. Untuk saat ini semua pengguna yang login masih melihat transaksi yang sama; pemisahan transaksi per pengguna (`user_id`) menyusul di Fase 2.
 
 ### `TransactionDto`
 
@@ -183,3 +194,26 @@ Kalau `email` atau `password` kosong, atau format email salah. Bentuknya sama de
 ```
 
 Pesan dan waktu respons sengaja dibuat sama untuk email yang tidak terdaftar dan password yang salah, supaya penyerang tidak bisa mengetahui email mana yang terdaftar (user enumeration). Karena itu response ini tidak membawa `details.fieldErrors`.
+
+### 4.3 Profil pengguna yang sedang login (`GET /auth/me`)
+
+Dipakai frontend untuk menampilkan nama dan email di kartu profil, dan untuk memastikan token di cookie masih berlaku. Wajib membawa header `Authorization: Bearer <access_token>`.
+
+**Sukses: `200`**
+
+```json
+{
+  "data": {
+    "id": "usr_6b1c2f0e-3a51-4d0c-9a8e-1f2b3c4d5e6f",
+    "name": "Rani Putri",
+    "email": "rani@email.com",
+    "created_at": "2026-11-21T03:00:00.000Z"
+  }
+}
+```
+
+Bentuknya sama dengan `UserDto` di bagian 4.1.
+
+**Gagal: `401 UNAUTHORIZED`**
+
+Kalau token tidak ada atau tidak valid, sama seperti endpoint lain yang wajib login (lihat bagian 3). Juga dibalas `401` kalau token-nya valid tapi akun pemiliknya sudah tidak ada.

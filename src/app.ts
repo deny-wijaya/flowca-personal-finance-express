@@ -8,6 +8,7 @@ import { createAuthRouter } from "./modules/auth/presentation/auth.routes.ts";
 import { createTransactionRouter } from "./modules/transaction/presentation/transaction.routes.ts";
 import type { Logger } from "./shared/logger/logger.ts";
 import { errorHandler } from "./shared/http/middlewares/error-handler.ts";
+import { createRequireAuth } from "./shared/http/middlewares/require-auth.ts";
 import { notFoundHandler } from "./shared/http/middlewares/not-found.ts";
 
 export type AppOptions = {
@@ -25,8 +26,11 @@ export type AppOptions = {
  */
 export function createRouterApp(container: Container): Router {
   const router = Router();
-  router.use("/transactions", createTransactionRouter(container.transactionController));
-  router.use("/auth", createAuthRouter(container.authController));
+  // requireAuth dipasang per router, bukan untuk semua route: /auth/register dan /auth/login
+  // harus bisa dipanggil oleh user yang belum punya token.
+  const requireAuth = createRequireAuth((token) => container.tokenVerifier.verify(token));
+  router.use("/transactions", requireAuth, createTransactionRouter(container.transactionController));
+  router.use("/auth", createAuthRouter(container.authController, requireAuth));
   return router;
 }
 
