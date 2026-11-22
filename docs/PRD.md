@@ -183,7 +183,8 @@ Env dibaca dan divalidasi hanya di `src/config/env.ts`. Konfigurasi yang salah m
 | `CORS_ORIGINS` | `http://localhost:3200` | Daftar origin dipisah koma |
 | `LOG_LEVEL` | `info` | `fatal`, `error`, `warn`, `info`, `debug`, `trace`, `silent` |
 | `DATABASE_URL` | - | Ditambahkan di Fase 1 |
-| `JWT_SECRET`, `JWT_EXPIRES_IN` | - | Ditambahkan di Fase 2 |
+| `JWT_SECRET` | - | Wajib, minimal 32 karakter. Kunci tanda tangan JWT. Buat dengan `openssl rand -base64 48`, jangan di-commit |
+| `JWT_EXPIRES_IN` | `86400` | Masa berlaku access token dalam detik (1 hari) |
 
 ---
 

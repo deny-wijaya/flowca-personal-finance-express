@@ -1,7 +1,10 @@
+import { LoginUser } from "../modules/auth/application/login-user.ts";
 import { RegisterUser } from "../modules/auth/application/register-user.ts";
 import type { PasswordHasher } from "../modules/auth/domain/password-hasher.ts";
+import type { TokenIssuer } from "../modules/auth/domain/token-issuer.ts";
 import type { UserRepository } from "../modules/auth/domain/user-repository.ts";
 import { Argon2PasswordHasher } from "../modules/auth/infrastructure/argon2-password-hasher.ts";
+import { JoseTokenIssuer } from "../modules/auth/infrastructure/jose-token-issuer.ts";
 import { PostgresUserRepository } from "../modules/auth/infrastructure/postgres-user-repository.ts";
 import { createAuthController } from "../modules/auth/presentation/auth.controller.ts";
 import { systemClock, type Clock } from "../modules/transaction/application/clock.ts";
@@ -27,6 +30,11 @@ export type ContainerOverrides = {
   transactionRepository?: TransactionRepository;
   userRepository?: UserRepository;
   passwordHasher?: PasswordHasher;
+  /** Wajib diisi kalau `tokenIssuer` tidak diberikan. */
+  jwtSecret?: string;
+  /** Masa berlaku access token dalam detik. Bawaannya 1 hari. */
+  jwtExpiresIn?: number;
+  tokenIssuer?: TokenIssuer;
   clock?: Clock;
 };
 
@@ -38,6 +46,7 @@ export function createContainer(overrides: ContainerOverrides = {}) {
     overrides.transactionRepository ?? new PostgresTransactionRepository(database!.db);
   const userRepository = overrides.userRepository ?? new PostgresUserRepository(database!.db);
   const passwordHasher = overrides.passwordHasher ?? new Argon2PasswordHasher();
+  const tokenIssuer = overrides.tokenIssuer ?? createTokenIssuer(overrides);
 
   const transactionController = createTransactionController({
     listTransactions: new ListTransactions(transactionRepository),
@@ -49,12 +58,18 @@ export function createContainer(overrides: ContainerOverrides = {}) {
 
   const authController = createAuthController({
     registerUser: new RegisterUser(userRepository, passwordHasher),
+    loginUser: new LoginUser(userRepository, passwordHasher, tokenIssuer),
   });
 
   // Satu pool dipakai bersama oleh semua repository Postgres, dan ditutup sekali saat shutdown.
   const close = database ? database.close : async () => {};
 
   return { transactionController, authController, close };
+}
+
+function createTokenIssuer({ jwtSecret, jwtExpiresIn = 86_400 }: ContainerOverrides): TokenIssuer {
+  if (!jwtSecret) throw new Error("createContainer butuh jwtSecret kalau tokenIssuer tidak diberikan");
+  return new JoseTokenIssuer({ secret: jwtSecret, expiresIn: jwtExpiresIn });
 }
 
 function openDatabase(databaseUrl: string | undefined) {

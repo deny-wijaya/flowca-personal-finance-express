@@ -37,6 +37,14 @@ export class ConflictError extends DomainError {
   }
 }
 
+/** Identitas tidak bisa dipastikan, misalnya password salah atau token tidak valid (HTTP 401). */
+export class UnauthorizedError extends DomainError {
+  constructor(message: string, code = "UNAUTHORIZED") {
+    super(message, code);
+    this.name = "UnauthorizedError";
+  }
+}
+
 /** Data yang dicari tidak ada, misalnya transaksi dengan id tertentu. */
 export class NotFoundError extends DomainError {
   constructor(message: string) {

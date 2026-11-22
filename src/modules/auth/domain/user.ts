@@ -1,4 +1,4 @@
-import { ConflictError, ValidationError } from "../../../shared/domain/errors.ts";
+import { ConflictError, UnauthorizedError, ValidationError } from "../../../shared/domain/errors.ts";
 
 /**
  * Entity User dan aturan bisnis register.
@@ -46,6 +46,17 @@ export function assertValidPassword(password: string): void {
   }
   if (password.toLowerCase().includes("flowca")) {
     throw new ValidationError('Password tidak boleh mengandung kata "flowca"', "password");
+  }
+}
+
+/**
+ * Dilempar saat login gagal, baik karena email tidak terdaftar maupun password salah.
+ * Pesannya sengaja sama untuk kedua kasus supaya penyerang tidak tahu email mana yang terdaftar.
+ */
+export class InvalidCredentialsError extends UnauthorizedError {
+  constructor() {
+    super("Email atau password salah.", "INVALID_CREDENTIALS");
+    this.name = "InvalidCredentialsError";
   }
 }
 

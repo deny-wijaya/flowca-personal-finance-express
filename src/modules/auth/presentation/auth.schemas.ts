@@ -1,8 +1,9 @@
 import { z } from "zod";
+import type { AccessToken } from "../domain/token-issuer.ts";
 import { MAX_EMAIL_LENGTH, MAX_NAME_LENGTH, type User } from "../domain/user.ts";
 
 /**
- * Schema request dan response sesuai docs/API-CONTRACT.md bagian 4.1.
+ * Schema request dan response sesuai docs/API-CONTRACT.md bagian 4.1 (register) dan 4.2 (login).
  * Di sini hanya dicek BENTUK data (wajib diisi, format email, panjang).
  * Aturan password (huruf + angka, tanpa "flowca") adalah aturan bisnis, jadi dicek di domain.
  */
@@ -20,6 +21,20 @@ export const registerBodySchema = z.object({
   // Tidak di-trim: spasi di awal atau akhir adalah bagian dari password.
   password: z.string({ message: "Password wajib diisi" }),
 });
+
+/** Login hanya memeriksa bentuk. Aturan password tidak dicek di sini, karena password cukup dicocokkan dengan hash. */
+export const loginBodySchema = z.object({
+  email: z
+    .string({ message: "Email wajib diisi" })
+    .trim()
+    .min(1, "Email wajib diisi")
+    .pipe(z.email("Format email belum benar, contoh: nama@email.com")),
+  password: z.string({ message: "Password wajib diisi" }).min(1, "Password wajib diisi"),
+});
+
+export function toAccessTokenDto(accessToken: AccessToken) {
+  return { access_token: accessToken.token, expires_in: accessToken.expiresIn };
+}
 
 /** Mengubah entity menjadi DTO response. `passwordHash` sengaja tidak ikut. */
 export function toUserDto(user: User) {

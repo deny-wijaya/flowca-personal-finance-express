@@ -7,13 +7,14 @@ import { InMemoryTransactionRepository } from "../../transaction/infrastructure/
 import { InMemoryUserRepository } from "../infrastructure/in-memory-user-repository.ts";
 
 /**
- * Test HTTP untuk POST /api/v1/auth/register sesuai docs/API-CONTRACT.md bagian 4.1.
+ * Test HTTP untuk register dan login sesuai docs/API-CONTRACT.md bagian 4.1 dan 4.2.
  * Hasher yang dipakai argon2 asli (bawaan container), repository-nya in-memory.
  */
 function buildApp() {
   const container = createContainer({
     transactionRepository: new InMemoryTransactionRepository(),
     userRepository: new InMemoryUserRepository(),
+    jwtSecret: "kunci-rahasia-test-yang-panjangnya-lebih-dari-32-karakter",
   });
   return createApp({ container, logger: pino({ level: "silent" }), apiPrefix: "/api/v1", corsOrigins: [] });
 }
@@ -79,5 +80,45 @@ describe("POST /api/v1/auth/register", () => {
       .expect(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
     expect(res.body.error.details.fieldErrors.password).toEqual(["Password harus mengandung huruf dan angka"]);
+  });
+});
+
+describe("POST /api/v1/auth/login", () => {
+  let app: ReturnType<typeof buildApp>;
+  beforeEach(async () => {
+    app = buildApp();
+    await request(app).post("/api/v1/auth/register").send(rani).expect(201);
+  });
+
+  it("200 dengan access_token JWT dan expires_in", async () => {
+    const res = await request(app)
+      .post("/api/v1/auth/login")
+      .send({ email: "Rani@Email.com", password: "rahasia123" })
+      .expect(200);
+
+    expect(res.body.data.expires_in).toBe(86_400);
+    // JWT terdiri dari tiga bagian yang dipisah titik: header.payload.signature
+    expect(res.body.data.access_token.split(".")).toHaveLength(3);
+  });
+
+  it("password salah dan email tidak terdaftar membalas 401 yang sama persis", async () => {
+    const wrongPassword = await request(app)
+      .post("/api/v1/auth/login")
+      .send({ email: "rani@email.com", password: "salah123" })
+      .expect(401);
+    const unknownEmail = await request(app)
+      .post("/api/v1/auth/login")
+      .send({ email: "budi@email.com", password: "rahasia123" })
+      .expect(401);
+
+    expect(wrongPassword.body).toEqual({
+      error: { code: "INVALID_CREDENTIALS", message: "Email atau password salah." },
+    });
+    expect(unknownEmail.body).toEqual(wrongPassword.body);
+  });
+
+  it("400 VALIDATION_ERROR kalau email atau password kosong", async () => {
+    const res = await request(app).post("/api/v1/auth/login").send({ email: "", password: "" }).expect(400);
+    expect(Object.keys(res.body.error.details.fieldErrors).sort()).toEqual(["email", "password"]);
   });
 });

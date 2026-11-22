@@ -14,6 +14,7 @@ function buildApp() {
   const container = createContainer({
     transactionRepository: new InMemoryTransactionRepository(),
     userRepository: new InMemoryUserRepository(),
+    jwtSecret: "kunci-rahasia-test-yang-panjangnya-lebih-dari-32-karakter",
     clock: { now: () => new Date("2026-11-14T10:00:00+07:00") },
   });
   return createApp({ container, logger: pino({ level: "silent" }), apiPrefix: "/api/v1", corsOrigins: [] });

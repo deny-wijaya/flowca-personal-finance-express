@@ -37,6 +37,7 @@ Pesan error 4xx ditulis dalam bahasa Indonesia karena frontend menampilkannya la
 |---|---|---|
 | 400 | `VALIDATION_ERROR` | Bentuk request salah (field kurang, tipe salah) atau melanggar aturan bisnis |
 | 400 | `INVALID_JSON` | Body bukan JSON yang valid |
+| 401 | `INVALID_CREDENTIALS` | Login dengan email yang tidak terdaftar atau password yang salah (Fase 2) |
 | 401 | `UNAUTHORIZED` | Token tidak ada atau tidak valid (Fase 2) |
 | 404 | `NOT_FOUND` | Data dengan id tersebut tidak ada |
 | 404 | `ROUTE_NOT_FOUND` | Endpoint tidak ada |
@@ -57,7 +58,7 @@ Pesan error 4xx ditulis dalam bahasa Indonesia karena frontend menampilkannya la
 | `PATCH` | `/transactions/:id` | Minimal satu field dari body `POST` | `TransactionDto` |
 | `DELETE` | `/transactions/:id` | - | Kosong, status `204` |
 | `POST` | `/auth/register` | `{ name, email, password }` | `UserDto`, status `201` (Fase 2, lihat 4.1) |
-| `POST` | `/auth/login` | `{ email, password }` | `{ access_token, expires_in }` (Fase 2, detail belum dirancang) |
+| `POST` | `/auth/login` | `{ email, password }` | `{ access_token, expires_in }` (Fase 2, lihat 4.2) |
 
 ### `TransactionDto`
 
@@ -138,3 +139,47 @@ Kalau yang salah adalah bentuk request (field kosong atau format email salah), `
 ```
 
 `details.fieldErrors.email` disertakan supaya frontend bisa menampilkan pesan di bawah field email dengan cara yang sama seperti error validasi.
+
+### 4.2 Login (`POST /auth/login`)
+
+Dipanggil oleh `signInWithPasswordAction` di frontend saat pengguna menekan tombol **Masuk** di layar Login (`/login`).
+
+**Request**
+
+```json
+{ "email": "rani@email.com", "password": "rahasia123" }
+```
+
+Email dinormalisasi sama seperti register (di-trim dan diubah ke huruf kecil), jadi `Rani@Email.com` bisa dipakai untuk login. Password tidak diperiksa aturannya di sini, hanya dicocokkan dengan hash yang tersimpan.
+
+**Sukses: `200`**
+
+```json
+{
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1c3JfNmIxYy4uLiIsImlhdCI6MTc2Mzc4NjAwMCwiZXhwIjoxNzYzODcyNDAwfQ.signature",
+    "expires_in": 86400
+  }
+}
+```
+
+- `access_token` adalah JWT bertanda tangan HS256. Isinya hanya `sub` (id user, contohnya `usr_6b1c...`), `iat` (waktu dibuat), dan `exp` (waktu kedaluwarsa). Email dan nama tidak dimasukkan, karena isi JWT bisa dibaca siapa pun yang memegang token.
+- `expires_in` adalah masa berlaku token dalam detik. Nilainya diatur lewat env `JWT_EXPIRES_IN` (bawaannya 86400, atau 1 hari). Belum ada refresh token, jadi setelah kedaluwarsa pengguna harus login lagi.
+- Frontend menyimpan token di cookie `httpOnly` dan mengirimnya di header `Authorization: Bearer <token>` untuk endpoint yang butuh login.
+
+**Gagal validasi: `400 VALIDATION_ERROR`**
+
+Kalau `email` atau `password` kosong, atau format email salah. Bentuknya sama dengan bagian 4.1.
+
+**Email atau password salah: `401 INVALID_CREDENTIALS`**
+
+```json
+{
+  "error": {
+    "code": "INVALID_CREDENTIALS",
+    "message": "Email atau password salah."
+  }
+}
+```
+
+Pesan dan waktu respons sengaja dibuat sama untuk email yang tidak terdaftar dan password yang salah, supaya penyerang tidak bisa mengetahui email mana yang terdaftar (user enumeration). Karena itu response ini tidak membawa `details.fieldErrors`.
