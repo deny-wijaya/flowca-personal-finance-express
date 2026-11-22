@@ -1,3 +1,12 @@
+import { LoginUser } from "../modules/auth/application/login-user.ts";
+import { RegisterUser } from "../modules/auth/application/register-user.ts";
+import type { PasswordHasher } from "../modules/auth/domain/password-hasher.ts";
+import type { TokenIssuer } from "../modules/auth/domain/token-issuer.ts";
+import type { UserRepository } from "../modules/auth/domain/user-repository.ts";
+import { Argon2PasswordHasher } from "../modules/auth/infrastructure/argon2-password-hasher.ts";
+import { JoseTokenIssuer } from "../modules/auth/infrastructure/jose-token-issuer.ts";
+import { PostgresUserRepository } from "../modules/auth/infrastructure/postgres-user-repository.ts";
+import { createAuthController } from "../modules/auth/presentation/auth.controller.ts";
 import { systemClock, type Clock } from "../modules/transaction/application/clock.ts";
 import { CreateTransaction } from "../modules/transaction/application/create-transaction.ts";
 import { DeleteTransaction } from "../modules/transaction/application/delete-transaction.ts";
@@ -12,19 +21,32 @@ import { createDatabase } from "../shared/database/database.ts";
 /**
  * Composition root: satu-satunya tempat yang merakit object konkret
  * (repository -> use case -> controller). Layer lain hanya menerima dependency lewat constructor.
- * Test bisa memberi repository dan clock sendiri lewat `overrides`. Kalau repository diberikan,
- * container tidak membuka koneksi database sama sekali, jadi test HTTP tidak butuh Docker.
+ * Test bisa memberi repository, hasher, dan clock sendiri lewat `overrides`. Kalau semua repository
+ * diberikan, container tidak membuka koneksi database sama sekali, jadi test HTTP tidak butuh Docker.
  */
 export type ContainerOverrides = {
-  /** Wajib diisi kalau `transactionRepository` tidak diberikan. */
+  /** Wajib diisi kalau ada repository yang tidak diberikan lewat overrides. */
   databaseUrl?: string;
   transactionRepository?: TransactionRepository;
+  userRepository?: UserRepository;
+  passwordHasher?: PasswordHasher;
+  /** Wajib diisi kalau `tokenIssuer` tidak diberikan. */
+  jwtSecret?: string;
+  /** Masa berlaku access token dalam detik. Bawaannya 1 hari. */
+  jwtExpiresIn?: number;
+  tokenIssuer?: TokenIssuer;
   clock?: Clock;
 };
 
 export function createContainer(overrides: ContainerOverrides = {}) {
   const clock = overrides.clock ?? systemClock;
-  const { transactionRepository, close } = createTransactionRepository(overrides);
+  const needsDatabase = !overrides.transactionRepository || !overrides.userRepository;
+  const database = needsDatabase ? openDatabase(overrides.databaseUrl) : undefined;
+  const transactionRepository =
+    overrides.transactionRepository ?? new PostgresTransactionRepository(database!.db);
+  const userRepository = overrides.userRepository ?? new PostgresUserRepository(database!.db);
+  const passwordHasher = overrides.passwordHasher ?? new Argon2PasswordHasher();
+  const tokenIssuer = overrides.tokenIssuer ?? createTokenIssuer(overrides);
 
   const transactionController = createTransactionController({
     listTransactions: new ListTransactions(transactionRepository),
@@ -34,21 +56,27 @@ export function createContainer(overrides: ContainerOverrides = {}) {
     getTransaction: new GetTransaction(transactionRepository),
   });
 
-  return { transactionController, close };
+  const authController = createAuthController({
+    registerUser: new RegisterUser(userRepository, passwordHasher),
+    loginUser: new LoginUser(userRepository, passwordHasher, tokenIssuer),
+  });
+
+  // Satu pool dipakai bersama oleh semua repository Postgres, dan ditutup sekali saat shutdown.
+  const close = database ? database.close : async () => {};
+
+  return { transactionController, authController, close };
 }
 
-function createTransactionRepository(overrides: ContainerOverrides): {
-  transactionRepository: TransactionRepository;
-  close: () => Promise<void>;
-} {
-  if (overrides.transactionRepository) {
-    return { transactionRepository: overrides.transactionRepository, close: async () => {} };
+function createTokenIssuer({ jwtSecret, jwtExpiresIn = 86_400 }: ContainerOverrides): TokenIssuer {
+  if (!jwtSecret) throw new Error("createContainer butuh jwtSecret kalau tokenIssuer tidak diberikan");
+  return new JoseTokenIssuer({ secret: jwtSecret, expiresIn: jwtExpiresIn });
+}
+
+function openDatabase(databaseUrl: string | undefined) {
+  if (!databaseUrl) {
+    throw new Error("createContainer butuh databaseUrl kalau ada repository yang tidak diberikan lewat overrides");
   }
-  if (!overrides.databaseUrl) {
-    throw new Error("createContainer butuh databaseUrl kalau transactionRepository tidak diberikan");
-  }
-  const { db, close } = createDatabase(overrides.databaseUrl);
-  return { transactionRepository: new PostgresTransactionRepository(db), close };
+  return createDatabase(databaseUrl);
 }
 
 export type Container = ReturnType<typeof createContainer>;

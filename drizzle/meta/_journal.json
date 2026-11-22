@@ -8,6 +8,13 @@
       "when": 1794796328015,
       "tag": "0000_create_transactions",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795243023486,
+      "tag": "0001_create_users",
+      "breakpoints": true
     }
   ]
 }

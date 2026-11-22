@@ -23,6 +23,28 @@ export class ValidationError extends DomainError {
   }
 }
 
+/**
+ * Data bentrok dengan data yang sudah ada, misalnya register dengan email yang sudah terdaftar.
+ * Request-nya sendiri valid; ia ditolak karena keadaan data di server (HTTP 409).
+ */
+export class ConflictError extends DomainError {
+  readonly field: string | undefined;
+
+  constructor(message: string, code: string, field?: string) {
+    super(message, code);
+    this.name = "ConflictError";
+    this.field = field;
+  }
+}
+
+/** Identitas tidak bisa dipastikan, misalnya password salah atau token tidak valid (HTTP 401). */
+export class UnauthorizedError extends DomainError {
+  constructor(message: string, code = "UNAUTHORIZED") {
+    super(message, code);
+    this.name = "UnauthorizedError";
+  }
+}
+
 /** Data yang dicari tidak ada, misalnya transaksi dengan id tertentu. */
 export class NotFoundError extends DomainError {
   constructor(message: string) {

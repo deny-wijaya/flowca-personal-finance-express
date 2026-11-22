@@ -21,6 +21,10 @@ const envSchema = z.object({
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   // Wajib, tanpa default: server harus berhenti kalau lupa diisi, bukan diam-diam memakai database lain.
   DATABASE_URL: z.string().startsWith("postgres://", "DATABASE_URL harus diawali postgres://"),
+  // Kunci tanda tangan JWT. Siapa pun yang tahu nilai ini bisa membuat token palsu, jadi wajib panjang dan rahasia.
+  JWT_SECRET: z.string().min(32, "JWT_SECRET minimal 32 karakter. Buat dengan: openssl rand -base64 48"),
+  // Masa berlaku access token dalam detik. Bawaannya 1 hari.
+  JWT_EXPIRES_IN: z.coerce.number().int().positive().default(86_400),
 });
 
 export type Env = z.infer<typeof envSchema>;

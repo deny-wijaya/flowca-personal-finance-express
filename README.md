@@ -33,6 +33,8 @@ The Flowca frontend (Next.js) calls this API from its server to read and write t
 | `POST` | `/api/v1/transactions` | Create a transaction, responds with `201` |
 | `PATCH` | `/api/v1/transactions/:id` | Update at least one field |
 | `DELETE` | `/api/v1/transactions/:id` | Delete a transaction, responds with `204` |
+| `POST` | `/api/v1/auth/register` | Create an account, responds with `201` (password hashed with argon2) |
+| `POST` | `/api/v1/auth/login` | Exchange email and password for a JWT access token |
 
 Every response uses the same envelope, and JSON fields are `snake_case`. Amounts are whole Rupiah, and dates are ISO 8601 (responses are always in UTC).
 
@@ -274,5 +276,6 @@ docs/                       # PRD and the architecture contract
 
 The docs below are written in Indonesian.
 
-- [`docs/PRD.md`](docs/PRD.md) covers scope, the API contract, and the learning roadmap.
+- [`docs/PRD.md`](docs/PRD.md) covers scope and the learning roadmap.
+- [`docs/API-CONTRACT.md`](docs/API-CONTRACT.md) is the API contract shared with the frontend.
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) covers the architecture rules and how to add a new feature.

@@ -6,7 +6,11 @@ import { createLogger } from "./shared/logger/logger.ts";
 /** Entry point: baca env, rakit dependency, lalu jalankan server HTTP. */
 const env = loadEnv();
 const logger = createLogger({ level: env.LOG_LEVEL, pretty: env.NODE_ENV === "development" });
-const container = createContainer({ databaseUrl: env.DATABASE_URL });
+const container = createContainer({
+  databaseUrl: env.DATABASE_URL,
+  jwtSecret: env.JWT_SECRET,
+  jwtExpiresIn: env.JWT_EXPIRES_IN,
+});
 const app = createApp({
   container,
   logger,
