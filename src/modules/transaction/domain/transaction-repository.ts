@@ -17,6 +17,9 @@ export type TransactionFilter = {
  * Posisi transaksi terakhir di satu halaman. Halaman berikutnya dimulai dari transaksi yang urutannya
  * tepat sesudah posisi ini. `id` ikut disimpan karena beberapa transaksi bisa punya `occurredAt` yang sama.
  */
+/** Perubahan yang bisa diterapkan ke banyak transaksi sekaligus (POST /transactions/bulk-update). */
+export type BulkChanges = { categoryId?: string; accountId?: string };
+
 export type TransactionCursor = { occurredAt: Date; id: string };
 
 export type TransactionPage = Page<Transaction, TransactionCursor>;
@@ -54,6 +57,15 @@ export interface TransactionRepository {
   create(userId: string, input: NewTransaction): Promise<Transaction>;
   update(userId: string, id: string, data: NewTransaction): Promise<Transaction>;
   delete(userId: string, id: string): Promise<void>;
+  /** Transaksi milik `userId` dengan id di `ids`. Id yang tidak ada atau milik user lain tidak ikut. */
+  findManyByIds(userId: string, ids: string[]): Promise<Transaction[]>;
+  /**
+   * Menghapus semua transaksi `ids` milik `userId` dalam satu transaksi database.
+   * false kalau ada id yang tidak ditemukan; dalam kasus itu tidak ada yang terhapus (rollback).
+   */
+  deleteAll(userId: string, ids: string[]): Promise<boolean>;
+  /** Seperti deleteAll, tapi mengganti kategori dan/atau akun. false berarti tidak ada yang berubah. */
+  updateAll(userId: string, ids: string[], changes: BulkChanges): Promise<boolean>;
   /** Menjumlahkan transaksi milik `userId` di rentang `range`. Semua angka 0 kalau tidak ada transaksi. */
   summarize(userId: string, range: DateRange): Promise<TransactionTotals>;
 }

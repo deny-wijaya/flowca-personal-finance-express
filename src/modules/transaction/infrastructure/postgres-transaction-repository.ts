@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { and, asc, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm";
 import type { Database } from "../../../shared/database/database.ts";
 import { toPage, type PageRequest } from "../../../shared/domain/pagination.ts";
 import type { NewTransaction, Transaction } from "../domain/transaction.ts";
 import type {
+  BulkChanges,
   DateRange,
   TransactionCursor,
   TransactionFilter,
@@ -126,6 +127,53 @@ export class PostgresTransactionRepository implements TransactionRepository {
     await this.#db.delete(transactions).where(and(eq(transactions.id, id), eq(transactions.userId, userId)));
   }
 
+  async findManyByIds(userId: string, ids: string[]): Promise<Transaction[]> {
+    if (ids.length === 0) return [];
+    return this.#db
+      .select(transactionColumns)
+      .from(transactions)
+      .innerJoin(categories, eq(categories.id, transactions.categoryId))
+      .leftJoin(accounts, eq(accounts.id, transactions.accountId))
+      .where(and(eq(transactions.userId, userId), inArray(transactions.id, ids)));
+  }
+
+  async deleteAll(userId: string, ids: string[]): Promise<boolean> {
+    return this.#allOrNothing(ids.length, (tx) =>
+      tx
+        .delete(transactions)
+        .where(and(eq(transactions.userId, userId), inArray(transactions.id, ids)))
+        .returning({ id: transactions.id }),
+    );
+  }
+
+  async updateAll(userId: string, ids: string[], changes: BulkChanges): Promise<boolean> {
+    return this.#allOrNothing(ids.length, (tx) =>
+      tx
+        .update(transactions)
+        .set({ ...changes, updatedAt: sql`now()` })
+        .where(and(eq(transactions.userId, userId), inArray(transactions.id, ids)))
+        .returning({ id: transactions.id }),
+    );
+  }
+
+  /**
+   * Menjalankan `work` di dalam transaksi database (BEGIN ... COMMIT). Kalau jumlah baris yang kena
+   * tidak sama dengan `expected`, berarti ada id yang tidak ditemukan atau milik user lain. Kita lempar
+   * error di dalam callback supaya Drizzle menjalankan ROLLBACK, sehingga tidak ada baris yang berubah.
+   */
+  async #allOrNothing(expected: number, work: (tx: Transaction_) => Promise<{ id: string }[]>): Promise<boolean> {
+    try {
+      await this.#db.transaction(async (tx) => {
+        const rows = await work(tx);
+        if (rows.length !== expected) throw new NotAllRowsMatched();
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof NotAllRowsMatched) return false;
+      throw error;
+    }
+  }
+
   async summarize(userId: string, range: DateRange): Promise<TransactionTotals> {
     const inRange = and(
       eq(transactions.userId, userId),
@@ -166,3 +214,9 @@ export class PostgresTransactionRepository implements TransactionRepository {
     return { ...totals, expenseByCategory: categoryRows };
   }
 }
+
+/** Penanda internal untuk memicu ROLLBACK di #allOrNothing. Tidak pernah keluar dari repository. */
+class NotAllRowsMatched extends Error {}
+
+/** Objek transaksi database yang diberikan Drizzle ke callback db.transaction(). */
+type Transaction_ = Parameters<Parameters<Database["transaction"]>[0]>[0];

@@ -7,6 +7,9 @@ export function createTransactionRouter(controller: TransactionController): Rout
   router.get("/:id", controller.get);
   router.get("/", controller.list);
   router.post("/", controller.create);
+  // Aksi massal dari bar aksi tabel Transaksi (API-CONTRACT.md bagian 4.11).
+  router.post("/bulk-delete", controller.bulkDelete);
+  router.post("/bulk-update", controller.bulkUpdate);
   router.patch("/:id", controller.update);
   router.delete("/:id", controller.remove);
   return router;

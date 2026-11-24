@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { toPage, type PageRequest } from "../../../shared/domain/pagination.ts";
 import type { NewTransaction, Transaction } from "../domain/transaction.ts";
 import type {
+  BulkChanges,
   DateRange,
   TransactionCursor,
   TransactionFilter,
@@ -71,6 +72,28 @@ export class InMemoryTransactionRepository implements TransactionRepository {
 
   async delete(userId: string, id: string): Promise<void> {
     if (await this.findById(userId, id)) this.#rows.delete(id);
+  }
+
+  async findManyByIds(userId: string, ids: string[]): Promise<Transaction[]> {
+    const wanted = new Set(ids);
+    return [...this.#rows.values()].filter((row) => row.userId === userId && wanted.has(row.id)).map((row) => this.#withCategory(row));
+  }
+
+  async deleteAll(userId: string, ids: string[]): Promise<boolean> {
+    // Meniru rollback: cek dulu semuanya ada, baru hapus.
+    if ((await this.findManyByIds(userId, ids)).length !== ids.length) return false;
+    for (const id of ids) this.#rows.delete(id);
+    return true;
+  }
+
+  async updateAll(userId: string, ids: string[], changes: BulkChanges): Promise<boolean> {
+    if ((await this.findManyByIds(userId, ids)).length !== ids.length) return false;
+    const now = new Date();
+    for (const id of ids) {
+      const row = this.#rows.get(id)!;
+      this.#rows.set(id, { ...row, ...changes, updatedAt: now });
+    }
+    return true;
   }
 
   async summarize(userId: string, range: DateRange): Promise<TransactionTotals> {

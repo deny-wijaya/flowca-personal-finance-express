@@ -12,6 +12,7 @@ import { JoseTokenVerifier } from "../modules/auth/infrastructure/jose-token-ver
 import { PostgresUserRepository } from "../modules/auth/infrastructure/postgres-user-repository.ts";
 import { createAuthController } from "../modules/auth/presentation/auth.controller.ts";
 import { systemClock, type Clock } from "../modules/transaction/application/clock.ts";
+import { BulkDeleteTransactions, BulkUpdateTransactions } from "../modules/transaction/application/bulk-transactions.ts";
 import { CreateAccount } from "../modules/transaction/application/create-account.ts";
 import { DeleteBudget } from "../modules/transaction/application/delete-budget.ts";
 import { ListBudgets } from "../modules/transaction/application/list-budgets.ts";
@@ -89,6 +90,8 @@ export function createContainer(overrides: ContainerOverrides = {}) {
     deleteTransaction: new DeleteTransaction(transactionRepository),
     getTransaction: new GetTransaction(transactionRepository),
     getSummary: new GetSummary(transactionRepository),
+    bulkDeleteTransactions: new BulkDeleteTransactions(transactionRepository),
+    bulkUpdateTransactions: new BulkUpdateTransactions(transactionRepository, categoryRepository, accountRepository),
   });
 
   const categoryController = createCategoryController({

@@ -43,6 +43,26 @@ export const summaryQuerySchema = z
   })
   .refine((q) => q.from <= q.to, { message: "`from` harus sebelum `to`", path: ["from"] });
 
+/** Aturan `ids` untuk aksi massal (API-CONTRACT.md bagian 4.11). */
+const bulkIdsSchema = z
+  .array(z.string().trim().min(1, "Id transaksi tidak boleh kosong"), { message: "Pilih minimal satu transaksi" })
+  .min(1, "Pilih minimal satu transaksi")
+  .max(100, "Maksimal 100 transaksi sekali proses");
+
+export const bulkDeleteBodySchema = z.object({ ids: bulkIdsSchema });
+
+export const bulkUpdateBodySchema = z.object({
+  ids: bulkIdsSchema,
+  changes: z
+    .object({
+      category_id: z.string().trim().min(1, "Kategori tidak boleh kosong").optional(),
+      account_id: z.string().trim().min(1, "Akun tidak boleh kosong").optional(),
+    }, { message: "Pilih kategori atau akun yang mau diubah" })
+    .refine((changes) => changes.category_id !== undefined || changes.account_id !== undefined, {
+      message: "Pilih kategori atau akun yang mau diubah",
+    }),
+});
+
 export const transactionIdParamsSchema = z.object({ id: z.string().min(1) });
 
 export const createTransactionBodySchema = z.object({

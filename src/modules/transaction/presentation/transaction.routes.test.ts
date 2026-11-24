@@ -449,3 +449,81 @@ describe("/api/v1/budgets", () => {
     await request(app).get("/api/v1/budgets").expect(401);
   });
 });
+
+describe("aksi massal /api/v1/transactions/bulk-*", () => {
+  let app: ReturnType<typeof buildApp>;
+  let api: ReturnType<typeof request.agent>;
+  let ids: string[];
+  beforeEach(async () => {
+    app = buildApp();
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_test");
+    api = request.agent(app).set("Authorization", `Bearer ${token}`);
+    gojek.account_id = await createAccount(api, "BCA");
+    ids = [];
+    for (const note of ["Gojek 1", "Gojek 2", "Gojek 3"]) {
+      ids.push((await api.post("/api/v1/transactions").send({ ...gojek, note }).expect(201)).body.data.id);
+    }
+  });
+
+  it("bulk-delete menghapus semua id yang dipilih, id dobel dihitung sekali", async () => {
+    const res = await api.post("/api/v1/transactions/bulk-delete").send({ ids: [ids[0], ids[1], ids[1]] }).expect(200);
+    expect(res.body).toEqual({ data: { deleted: 2 } });
+    const left = await api.get("/api/v1/transactions").expect(200);
+    expect(left.body.data.map((t: { id: string }) => t.id)).toEqual([ids[2]]);
+  });
+
+  it("bulk-delete dengan satu id yang tidak ada dibalas 404 dan tidak menghapus apa pun", async () => {
+    const res = await api.post("/api/v1/transactions/bulk-delete").send({ ids: [ids[0], "trx_tidak_ada"] }).expect(404);
+    expect(res.body.error).toEqual({ code: "NOT_FOUND", message: "Sebagian transaksi tidak ditemukan. Tidak ada yang diubah." });
+    expect((await api.get("/api/v1/transactions").expect(200)).body.data).toHaveLength(3);
+  });
+
+  it("bulk-update memindahkan akun dan mengganti kategori sekaligus", async () => {
+    const tunai = await createAccount(api, "Tunai");
+    await api
+      .post("/api/v1/transactions/bulk-update")
+      .send({ ids: [ids[0], ids[1]], changes: { account_id: tunai, category_id: "cat_expense_belanja" } })
+      .expect(200, { data: { updated: 2 } });
+
+    const moved = await api.get("/api/v1/transactions").query({ account_id: tunai }).expect(200);
+    expect(moved.body.data.map((t: { category: string; account: string }) => [t.category, t.account])).toEqual([
+      ["Belanja", "Tunai"],
+      ["Belanja", "Tunai"],
+    ]);
+  });
+
+  it("bulk-update menolak kategori yang jenisnya tidak cocok dengan salah satu transaksi, tanpa mengubah apa pun", async () => {
+    const gaji = await api
+      .post("/api/v1/transactions")
+      .send({ ...gojek, type: "income", category_id: "cat_income_gaji", note: "Gaji" })
+      .expect(201);
+    const res = await api
+      .post("/api/v1/transactions/bulk-update")
+      .send({ ids: [ids[0], gaji.body.data.id], changes: { category_id: "cat_expense_belanja" } })
+      .expect(400);
+    expect(res.body.error.details.fieldErrors.category_id).toEqual(["Kategori Belanja tidak bisa dipakai untuk pemasukan"]);
+    expect((await api.get(`/api/v1/transactions/${ids[0]}`).expect(200)).body.data.category).toBe("Transportasi");
+  });
+
+  it("validasi body: ids kosong, lebih dari 100, changes kosong, dan akun milik user lain", async () => {
+    const empty = await api.post("/api/v1/transactions/bulk-delete").send({ ids: [] }).expect(400);
+    expect(empty.body.error.details.fieldErrors.ids).toEqual(["Pilih minimal satu transaksi"]);
+    const tooMany = await api.post("/api/v1/transactions/bulk-delete").send({ ids: Array.from({ length: 101 }, (_, i) => `trx_${i}`) }).expect(400);
+    expect(tooMany.body.error.details.fieldErrors.ids).toEqual(["Maksimal 100 transaksi sekali proses"]);
+    const noChanges = await api.post("/api/v1/transactions/bulk-update").send({ ids, changes: {} }).expect(400);
+    expect(noChanges.body.error.details.fieldErrors.changes).toEqual(["Pilih kategori atau akun yang mau diubah"]);
+
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_budi");
+    const budiAccount = await createAccount(request.agent(app).set("Authorization", `Bearer ${token}`), "Dompet Budi");
+    const foreign = await api.post("/api/v1/transactions/bulk-update").send({ ids, changes: { account_id: budiAccount } }).expect(400);
+    expect(foreign.body.error.details.fieldErrors.account_id).toEqual(["Akun tidak ditemukan"]);
+  });
+
+  it("transaksi milik user lain tidak bisa ikut dihapus", async () => {
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_budi");
+    const budi = request.agent(app).set("Authorization", `Bearer ${token}`);
+    await budi.post("/api/v1/transactions/bulk-delete").send({ ids }).expect(404);
+    expect((await api.get("/api/v1/transactions").expect(200)).body.data).toHaveLength(3);
+  });
+});
+
