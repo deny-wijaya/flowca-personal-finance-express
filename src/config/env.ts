@@ -25,6 +25,9 @@ const envSchema = z.object({
   JWT_SECRET: z.string().min(32, "JWT_SECRET minimal 32 karakter. Buat dengan: openssl rand -base64 48"),
   // Masa berlaku access token dalam detik. Bawaannya 1 hari.
   JWT_EXPIRES_IN: z.coerce.number().int().positive().default(86_400),
+  // Alamat yang boleh mengirim header X-Forwarded-For (IP asli user dari server Next).
+  // "loopback" = hanya dari mesin yang sama (127.0.0.1 / ::1). Lihat pengaturan "trust proxy" Express.
+  TRUST_PROXY: z.string().min(1).default("loopback"),
 });
 
 export type Env = z.infer<typeof envSchema>;
