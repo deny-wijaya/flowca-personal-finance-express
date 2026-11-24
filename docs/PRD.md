@@ -97,7 +97,7 @@ Kolom **Status** menunjukkan apa yang sudah ada di boilerplate.
 - **C4.** Setiap transaksi punya `user_id`. Pengguna hanya bisa melihat dan mengubah transaksinya sendiri. Mengakses transaksi milik orang lain membalas `404`, bukan `403`, supaya keberadaan data orang lain tidak bocor.
 - **C5.** Endpoint login dibatasi 5 percobaan per menit per IP (rate limit).
 
-Status: Belum (Fase 2).
+Status: C1 sampai C4 selesai (register, login, middleware auth dan `GET /auth/me`, transaksi per pengguna). C5 (rate limit login) belum.
 
 ### Epic D: Fase 2 produk (P2)
 

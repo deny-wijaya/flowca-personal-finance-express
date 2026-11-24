@@ -9,9 +9,10 @@ export class DeleteTransaction {
     this.#repository = repository;
   }
 
-  async execute(id: string): Promise<void> {
-    const existing = await this.#repository.findById(id);
+  async execute(userId: string, id: string): Promise<void> {
+    // Transaksi milik user lain juga menghasilkan null, jadi dibalas 404 yang sama.
+    const existing = await this.#repository.findById(userId, id);
     if (!existing) throw new NotFoundError(`Transaksi ${id} tidak ditemukan`);
-    await this.#repository.delete(id);
+    await this.#repository.delete(userId, id);
   }
 }

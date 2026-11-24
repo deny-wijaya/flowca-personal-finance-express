@@ -43,6 +43,26 @@ describe("/api/v1/transactions", () => {
     api = request.agent(app).set("Authorization", `Bearer ${token}`);
   });
 
+  it("transaksi milik user lain dibalas 404, persis seperti transaksi yang tidak ada", async () => {
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_budi");
+    const budi = request.agent(app).set("Authorization", `Bearer ${token}`);
+    const { body } = await api.post("/api/v1/transactions").send(gojek).expect(201);
+    const id = body.data.id;
+
+    const list = await budi.get("/api/v1/transactions").expect(200);
+    expect(list.body.data).toEqual([]);
+
+    const viaGet = await budi.get(`/api/v1/transactions/${id}`).expect(404);
+    const unknown = await budi.get("/api/v1/transactions/trx_tidak_ada").expect(404);
+    expect(viaGet.body.error.code).toBe(unknown.body.error.code);
+    await budi.patch(`/api/v1/transactions/${id}`).send({ amount: 1 }).expect(404);
+    await budi.delete(`/api/v1/transactions/${id}`).expect(404);
+
+    // Milik Rani tetap utuh.
+    const mine = await api.get(`/api/v1/transactions/${id}`).expect(200);
+    expect(mine.body.data.amount).toBe(64_000);
+  });
+
   it("tanpa token membalas 401 UNAUTHORIZED", async () => {
     const res = await request(app).get("/api/v1/transactions").expect(401);
     expect(res.body.error.code).toBe("UNAUTHORIZED");

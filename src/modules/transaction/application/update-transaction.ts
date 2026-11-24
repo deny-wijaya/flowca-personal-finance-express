@@ -13,8 +13,8 @@ export class UpdateTransaction {
     this.#clock = clock;
   }
 
-  async execute(id: string, changes: TransactionChanges): Promise<Transaction> {
-    const existing = await this.#repository.findById(id);
+  async execute(userId: string, id: string, changes: TransactionChanges): Promise<Transaction> {
+    const existing = await this.#repository.findById(userId, id);
     if (!existing) throw new NotFoundError(`Transaksi ${id} tidak ditemukan`);
 
     // Gabungkan data lama dengan perubahan, lalu validasi hasil akhirnya.
@@ -27,6 +27,6 @@ export class UpdateTransaction {
       occurredAt: changes.occurredAt ?? existing.occurredAt,
     };
     assertValidTransaction(merged, this.#clock.now());
-    return this.#repository.update(id, merged);
+    return this.#repository.update(userId, id, merged);
   }
 }

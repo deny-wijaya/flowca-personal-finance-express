@@ -18,6 +18,8 @@ export const MAX_NOTE_LENGTH = 200;
 
 export type Transaction = {
   id: string;
+  /** Pemilik transaksi (id dari tabel users). Setiap user hanya bisa melihat dan mengubah miliknya sendiri. */
+  userId: string;
   type: TransactionType;
   /** Nominal dalam Rupiah, bilangan bulat positif (tanpa desimal). */
   amount: number;

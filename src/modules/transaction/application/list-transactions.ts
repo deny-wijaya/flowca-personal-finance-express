@@ -9,7 +9,7 @@ export class ListTransactions {
     this.#repository = repository;
   }
 
-  execute(filter: TransactionFilter = {}): Promise<Transaction[]> {
-    return this.#repository.list(filter);
+  execute(userId: string, filter: TransactionFilter = {}): Promise<Transaction[]> {
+    return this.#repository.list(userId, filter);
   }
 }
