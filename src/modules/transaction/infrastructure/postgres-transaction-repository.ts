@@ -11,13 +11,30 @@ import type {
   TransactionRepository,
   TransactionTotals,
 } from "../domain/transaction-repository.ts";
-import { transactions } from "./transaction.table.ts";
+import { categories, transactions } from "./transaction.table.ts";
+
+/**
+ * Kolom yang dibaca untuk satu Transaction. Nama kategori diambil lewat JOIN ke tabel categories,
+ * karena tabel transactions hanya menyimpan category_id.
+ */
+const transactionColumns = {
+  id: transactions.id,
+  userId: transactions.userId,
+  type: transactions.type,
+  amount: transactions.amount,
+  categoryId: transactions.categoryId,
+  category: categories.name,
+  note: transactions.note,
+  occurredAt: transactions.occurredAt,
+  createdAt: transactions.createdAt,
+  updatedAt: transactions.updatedAt,
+};
 
 /**
  * Implementasi TransactionRepository yang menyimpan data di PostgreSQL lewat Drizzle.
  * Interface-nya sama persis dengan InMemoryTransactionRepository, jadi use case tidak berubah.
- * Bentuk satu baris tabel (`transactions.$inferSelect`) sama dengan type Transaction di domain,
- * sehingga hasil query bisa langsung dikembalikan tanpa diubah.
+ * Setiap baca transaksi memakai `transactionColumns` (JOIN ke categories), jadi hasilnya langsung
+ * berbentuk Transaction lengkap dengan nama kategori.
  *
  * Setiap query menyertakan `user_id = <userId>`. Transaksi milik user lain tidak pernah terbaca,
  * tidak bisa diubah, dan tidak bisa dihapus, karena dari sudut pandang query baris itu tidak ada.
@@ -37,16 +54,17 @@ export class PostgresTransactionRepository implements TransactionRepository {
 
     // and() mengabaikan argumen undefined. Kalau semua filter kosong, hanya user_id yang tersisa.
     const rows = await this.#db
-      .select()
+      .select(transactionColumns)
       .from(transactions)
+      .innerJoin(categories, eq(categories.id, transactions.categoryId))
       .where(
         and(
           eq(transactions.userId, userId),
           filter.from ? gte(transactions.occurredAt, filter.from) : undefined,
           filter.to ? lte(transactions.occurredAt, filter.to) : undefined,
           filter.type ? eq(transactions.type, filter.type) : undefined,
-          filter.category ? eq(transactions.category, filter.category) : undefined,
-          pattern ? or(ilike(transactions.note, pattern), ilike(transactions.category, pattern)) : undefined,
+          filter.categoryId ? eq(transactions.categoryId, filter.categoryId) : undefined,
+          pattern ? or(ilike(transactions.note, pattern), ilike(categories.name, pattern)) : undefined,
           // Keyset pagination: ambil baris yang urutannya tepat sesudah transaksi terakhir di halaman
           // sebelumnya. Perbandingan baris (a, b) < (x, y) artinya a < x, atau a = x dan b < y.
           after
@@ -66,8 +84,9 @@ export class PostgresTransactionRepository implements TransactionRepository {
   async findById(userId: string, id: string): Promise<Transaction | null> {
     // select selalu mengembalikan array, walaupun mencari berdasarkan primary key.
     const [row] = await this.#db
-      .select()
+      .select(transactionColumns)
       .from(transactions)
+      .innerJoin(categories, eq(categories.id, transactions.categoryId))
       .where(and(eq(transactions.id, id), eq(transactions.userId, userId)));
     return row ?? null;
   }
@@ -78,9 +97,11 @@ export class PostgresTransactionRepository implements TransactionRepository {
     const [row] = await this.#db
       .insert(transactions)
       .values({ ...input, userId, id: `trx_${randomUUID()}` })
-      .returning();
-    if (!row) throw new Error("Insert transaksi tidak mengembalikan baris");
-    return row;
+      .returning({ id: transactions.id });
+    // Dibaca ulang supaya hasilnya membawa nama kategori dari JOIN.
+    const created = row && (await this.findById(userId, row.id));
+    if (!created) throw new Error("Insert transaksi tidak mengembalikan baris");
+    return created;
   }
 
   async update(userId: string, id: string, data: NewTransaction): Promise<Transaction> {
@@ -89,9 +110,10 @@ export class PostgresTransactionRepository implements TransactionRepository {
       .update(transactions)
       .set({ ...data, updatedAt: sql`now()` })
       .where(and(eq(transactions.id, id), eq(transactions.userId, userId)))
-      .returning();
-    if (!row) throw new Error(`Transaksi ${id} tidak ada di repository`);
-    return row;
+      .returning({ id: transactions.id });
+    const updated = row && (await this.findById(userId, row.id));
+    if (!updated) throw new Error(`Transaksi ${id} tidak ada di repository`);
+    return updated;
   }
 
   async delete(userId: string, id: string): Promise<void> {
@@ -123,12 +145,15 @@ export class PostgresTransactionRepository implements TransactionRepository {
         .from(transactions)
         .where(inRange),
       // Query 2: satu baris per kategori pengeluaran (GROUP BY), urut dari nominal terbesar.
+      // JOIN ke categories untuk mengambil namanya. GROUP BY id dan nama sekaligus, karena dua kategori
+      // (misalnya "Lainnya" pemasukan dan pengeluaran) bisa punya nama sama.
       this.#db
-        .select({ category: transactions.category, amount: expenseSum })
+        .select({ categoryId: categories.id, category: categories.name, amount: expenseSum })
         .from(transactions)
+        .innerJoin(categories, eq(categories.id, transactions.categoryId))
         .where(and(inRange, eq(transactions.type, "expense")))
-        .groupBy(transactions.category)
-        .orderBy(desc(expenseSum), asc(transactions.category)),
+        .groupBy(categories.id, categories.name)
+        .orderBy(desc(expenseSum), asc(categories.name)),
     ]);
 
     const totals = totalsRows[0] ?? { totalIncome: 0, totalExpense: 0, transactionCount: 0, incomeCount: 0, expenseCount: 0 };

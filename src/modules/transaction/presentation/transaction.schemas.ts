@@ -27,7 +27,7 @@ export const listTransactionsQuerySchema = z
     from: isoDateTime.transform((value) => new Date(value)).optional(),
     to: isoDateTime.transform((value) => new Date(value)).optional(),
     type: z.enum(TRANSACTION_TYPES).optional(),
-    category: z.string().trim().min(1, "Kategori tidak boleh kosong").optional(),
+    category_id: z.string().trim().min(1, "Kategori tidak boleh kosong").optional(),
     q: z.string().trim().min(1, "Kata pencarian tidak boleh kosong").max(100, "Kata pencarian maksimal 100 karakter").optional(),
     limit: limitQuery,
     cursor: cursorQuery(transactionCursorShape()).optional(),
@@ -47,7 +47,7 @@ export const transactionIdParamsSchema = z.object({ id: z.string().min(1) });
 export const createTransactionBodySchema = z.object({
   type: z.enum(TRANSACTION_TYPES, { message: "Jenis harus income atau expense" }),
   amount: z.number({ message: "Nominal wajib berupa angka" }),
-  category: z.string({ message: "Kategori wajib diisi" }).trim().min(1, "Kategori wajib diisi"),
+  category_id: z.string({ message: "Kategori wajib diisi" }).trim().min(1, "Kategori wajib diisi"),
   note: z.string().trim().nullish().transform((value) => value || null),
   occurred_at: isoDateTime.transform((value) => new Date(value)),
 });
@@ -62,6 +62,7 @@ export function toTransactionDto(trx: Transaction) {
     id: trx.id,
     type: trx.type,
     amount: trx.amount,
+    category_id: trx.categoryId,
     category: trx.category,
     note: trx.note,
     occurred_at: trx.occurredAt.toISOString(),
@@ -81,6 +82,10 @@ export function toSummaryDto(summary: Summary) {
     transaction_count: summary.transactionCount,
     income_count: summary.incomeCount,
     expense_count: summary.expenseCount,
-    expense_by_category: summary.expenseByCategory,
+    expense_by_category: summary.expenseByCategory.map((item) => ({
+      category_id: item.categoryId,
+      category: item.category,
+      amount: item.amount,
+    })),
   };
 }

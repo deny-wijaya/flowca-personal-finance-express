@@ -3,7 +3,10 @@ import { createDatabase } from "../../../shared/database/database.ts";
 import { users } from "../../auth/infrastructure/user.table.ts";
 import type { NewTransaction } from "../domain/transaction.ts";
 import { PostgresTransactionRepository } from "./postgres-transaction-repository.ts";
-import { transactions } from "./transaction.table.ts";
+import { categories, transactions } from "./transaction.table.ts";
+import { PostgresCategoryRepository } from "./postgres-category-repository.ts";
+import { CategoryAlreadyExistsError } from "../domain/category.ts";
+import { isNotNull, eq } from "drizzle-orm";
 
 /**
  * Test repository ke database Postgres sungguhan (personal_finance_test, bukan personal_finance,
@@ -20,24 +23,27 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
   // `url!` aman karena describe ini di-skip ketika url kosong.
   const { db, close } = createDatabase(url!);
   const repository = new PostgresTransactionRepository(db);
+  const categoryRepository = new PostgresCategoryRepository(db);
 
   const gaji: NewTransaction = {
     type: "income",
     amount: 12_500_000,
-    category: "Gaji",
+    categoryId: "cat_income_gaji",
     note: "Gaji bulanan",
     occurredAt: new Date("2026-11-01T09:00:00+07:00"),
   };
   const gojek: NewTransaction = {
     type: "expense",
     amount: 64_000,
-    category: "Transportasi",
+    categoryId: "cat_expense_transportasi",
     note: "Gojek ke kantor",
     occurredAt: new Date("2026-11-06T09:00:00+07:00"),
   };
 
   beforeEach(async () => {
     await db.delete(transactions);
+    // Kategori bawaan (dari migration) tetap ada; hanya kategori kustom dari test sebelumnya yang dihapus.
+    await db.delete(categories).where(isNotNull(categories.userId));
     await db
       .insert(users)
       .values([
@@ -80,7 +86,7 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
   it("list memfilter type dan urut dari occurredAt terbaru", async () => {
     await repository.create(RANI, gaji);
     await repository.create(RANI, gojek);
-    await repository.create(RANI, { ...gaji, category: "Freelance", occurredAt: new Date("2026-11-08T09:00:00+07:00") });
+    await repository.create(RANI, { ...gaji, categoryId: "cat_income_freelance", occurredAt: new Date("2026-11-08T09:00:00+07:00") });
 
     const all = await repository.list(RANI, {}, firstPage);
     expect(all.items.map((trx) => trx.category)).toEqual(["Freelance", "Transportasi", "Gaji"]);
@@ -140,7 +146,7 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
     const november = { from: new Date("2026-11-01T00:00:00+07:00"), to: new Date("2026-11-30T23:59:59.999+07:00") };
     await repository.create(RANI, gaji);
     await repository.create(RANI, gojek);
-    await repository.create(RANI, { ...gojek, amount: 900_000_000_000, category: "Tagihan", note: "Nominal besar" });
+    await repository.create(RANI, { ...gojek, amount: 900_000_000_000, categoryId: "cat_expense_tagihan", note: "Nominal besar" });
     await repository.create(RANI, { ...gojek, occurredAt: new Date("2026-10-31T23:00:00+07:00") });
     await repository.create(BUDI, gojek);
 
@@ -151,8 +157,8 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
       incomeCount: 1,
       expenseCount: 2,
       expenseByCategory: [
-        { category: "Tagihan", amount: 900_000_000_000 },
-        { category: "Transportasi", amount: 64_000 },
+        { categoryId: "cat_expense_tagihan", category: "Tagihan", amount: 900_000_000_000 },
+        { categoryId: "cat_expense_transportasi", category: "Transportasi", amount: 64_000 },
       ],
     });
   });
@@ -189,12 +195,12 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
     expect(all.items.at(-1)?.category).toBe("Gaji");
   });
 
-  it("list memfilter category dan q (ILIKE di note dan category), dengan % diperlakukan sebagai teks", async () => {
+  it("list memfilter category_id dan q (ILIKE di note dan nama kategori), dengan % diperlakukan sebagai teks", async () => {
     await repository.create(RANI, gojek);
     await repository.create(RANI, gaji);
-    await repository.create(RANI, { ...gojek, category: "Belanja", note: "Diskon 50% Superindo" });
+    await repository.create(RANI, { ...gojek, categoryId: "cat_expense_belanja", note: "Diskon 50% Superindo" });
 
-    const byCategory = await repository.list(RANI, { category: "Transportasi" }, firstPage);
+    const byCategory = await repository.list(RANI, { categoryId: "cat_expense_transportasi" }, firstPage);
     expect(byCategory.items.map((trx) => trx.note)).toEqual(["Gojek ke kantor"]);
 
     const byNote = await repository.list(RANI, { q: "GOJEK" }, firstPage);
@@ -205,5 +211,58 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
 
     const percent = await repository.list(RANI, { q: "0%" }, firstPage);
     expect(percent.items.map((trx) => trx.category)).toEqual(["Belanja"]);
+  });
+
+  it("migration mengisi 14 kategori bawaan, dan list kategori memakai keyset pagination", async () => {
+    const first = await categoryRepository.list(RANI, {}, { limit: 10 });
+    const second = await categoryRepository.list(RANI, {}, { limit: 10, after: first.nextCursor! });
+    expect([...first.items, ...second.items].map((c) => c.id).slice(0, 2)).toEqual(["cat_expense_makanan", "cat_expense_transportasi"]);
+    expect(first.items.length + second.items.length).toBe(14);
+    expect(second.nextCursor).toBeNull();
+
+    const income = await categoryRepository.list(RANI, { type: "income" }, { limit: 100 });
+    expect(income.items.map((c) => c.name)).toEqual(["Gaji", "Freelance", "Bonus", "Hadiah", "Investasi", "Lainnya"]);
+  });
+
+  it("kategori kustom hanya terlihat oleh pemiliknya, dan nama dobel ditolak (termasuk nama bawaan)", async () => {
+    const kos = await categoryRepository.create(RANI, { name: "Kos", type: "expense" });
+    expect(kos.id).toMatch(/^cat_/);
+
+    expect(await categoryRepository.findById(RANI, kos.id)).toEqual(kos);
+    expect(await categoryRepository.findById(BUDI, kos.id)).toBeNull();
+    expect((await categoryRepository.list(BUDI, { type: "expense" }, { limit: 100 })).items).toHaveLength(8);
+
+    await expect(categoryRepository.create(RANI, { name: "KOS", type: "expense" })).rejects.toBeInstanceOf(CategoryAlreadyExistsError);
+    await expect(categoryRepository.create(RANI, { name: "transportasi", type: "expense" })).rejects.toBeInstanceOf(CategoryAlreadyExistsError);
+    await expect(categoryRepository.create(BUDI, { name: "Kos", type: "expense" })).resolves.toMatchObject({ userId: BUDI });
+  });
+
+  it("dua request bersamaan dengan nama sama: satu berhasil, satu ditolak unique index", async () => {
+    const results = await Promise.allSettled([
+      categoryRepository.create(RANI, { name: "Kos", type: "expense" }),
+      categoryRepository.create(RANI, { name: "Kos", type: "expense" }),
+    ]);
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const rejected = results.find((r) => r.status === "rejected");
+    expect(rejected?.status === "rejected" && rejected.reason).toBeInstanceOf(CategoryAlreadyExistsError);
+  });
+
+  it("transaksi membawa nama kategori kustom lewat JOIN, dan kategori yang masih dipakai tidak bisa dihapus", async () => {
+    const kos = await categoryRepository.create(RANI, { name: "Kos", type: "expense" });
+    const created = await repository.create(RANI, { ...gojek, categoryId: kos.id });
+    expect(created).toMatchObject({ categoryId: kos.id, category: "Kos" });
+
+    await expect(db.delete(categories).where(eq(categories.id, kos.id))).rejects.toThrow();
+  });
+
+  it("menghapus user ikut menghapus kategori kustom dan transaksinya sekaligus", async () => {
+    const temp = "usr_test_hapus";
+    await db.insert(users).values({ id: temp, name: "User Sementara", email: "hapus.repo@email.com", passwordHash: "hash" });
+    const kos = await categoryRepository.create(temp, { name: "Kos", type: "expense" });
+    await repository.create(temp, { ...gojek, categoryId: kos.id });
+
+    await db.delete(users).where(eq(users.id, temp));
+
+    expect(await categoryRepository.findById(temp, kos.id)).toBeNull();
   });
 });

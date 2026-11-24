@@ -7,7 +7,7 @@ import { transactions } from "../modules/transaction/infrastructure/transaction.
 import { createDatabase } from "../shared/database/database.ts";
 
 /**
- * Mengisi 8 transaksi contoh bulan berjalan untuk satu user, supaya menu Dashboard dan Transaksi
+ * Mengisi 8 transaksi contoh (dengan kategori bawaan) bulan berjalan untuk satu user, supaya menu Dashboard dan Transaksi
  * langsung terisi setelah user itu login. Dijalankan manual dengan email pemiliknya:
  *
  *   npm run db:seed -- rani@email.com

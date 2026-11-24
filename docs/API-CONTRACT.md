@@ -62,6 +62,7 @@ Kita memakai cursor, bukan offset (`page=2`), karena data transaksi terus bertam
 | 404 | `NOT_FOUND` | Data dengan id tersebut tidak ada |
 | 404 | `ROUTE_NOT_FOUND` | Endpoint tidak ada |
 | 409 | `EMAIL_ALREADY_REGISTERED` | Register dengan email yang sudah dipakai akun lain (Fase 2) |
+| 409 | `CATEGORY_ALREADY_EXISTS` | Membuat kategori dengan nama yang sudah ada untuk jenis yang sama (lihat 4.6) |
 | 413 | `PAYLOAD_TOO_LARGE` | Body lebih dari 100 KB |
 | 422 | `DOMAIN_ERROR` | Aturan bisnis lain yang bukan validasi field |
 | 429 | `TOO_MANY_REQUESTS` | Melewati rate limit (Fase 2) |
@@ -72,12 +73,14 @@ Kita memakai cursor, bukan offset (`page=2`), karena data transaksi terus bertam
 | Method | Path | Login | Query / Body | Response `data` |
 |---|---|---|---|---|
 | `GET` | `/health` (tanpa prefix) | Tidak | - | `{ status, uptime_seconds }` |
-| `GET` | `/transactions` | Wajib | `from`, `to`, `type`, `category`, `q`, `limit`, `cursor`, semua opsional (lihat 4.4) | `TransactionDto[]` dengan `page` |
+| `GET` | `/transactions` | Wajib | `from`, `to`, `type`, `category_id`, `q`, `limit`, `cursor`, semua opsional (lihat 4.4) | `TransactionDto[]` dengan `page` |
 | `GET` | `/summary` | Wajib | `from`, `to` wajib (lihat 4.5) | `SummaryDto` |
 | `GET` | `/transactions/:id` | Wajib | - | `TransactionDto` |
-| `POST` | `/transactions` | Wajib | `{ type, amount, category, note?, occurred_at }` | `TransactionDto`, status `201` |
+| `POST` | `/transactions` | Wajib | `{ type, amount, category_id, note?, occurred_at }` (lihat 4.7) | `TransactionDto`, status `201` |
 | `PATCH` | `/transactions/:id` | Wajib | Minimal satu field dari body `POST` | `TransactionDto` |
 | `DELETE` | `/transactions/:id` | Wajib | - | Kosong, status `204` |
+| `GET` | `/categories` | Wajib | `type`, `limit`, `cursor`, semua opsional (lihat 4.6) | `CategoryDto[]` dengan `page` |
+| `POST` | `/categories` | Wajib | `{ name, type }` (lihat 4.6) | `CategoryDto`, status `201` |
 | `POST` | `/auth/register` | Tidak | `{ name, email, password }` | `UserDto`, status `201` (lihat 4.1) |
 | `POST` | `/auth/login` | Tidak | `{ email, password }` | `{ access_token, expires_in }` (lihat 4.2) |
 | `GET` | `/auth/me` | Wajib | - | `UserDto` (lihat 4.3) |
@@ -101,6 +104,7 @@ Frontend sebaiknya menghapus token yang tersimpan dan mengarahkan pengguna ke la
   "id": "trx_44004a5d-3f88-4dc2-9fc4-7a28153ee761",
   "type": "expense",
   "amount": 64000,
+  "category_id": "cat_expense_transportasi",
   "category": "Transportasi",
   "note": "Gojek ke kantor",
   "occurred_at": "2026-11-06T02:00:00.000Z",
@@ -108,6 +112,8 @@ Frontend sebaiknya menghapus token yang tersimpan dan mengarahkan pengguna ke la
   "updated_at": "2026-11-06T02:00:00.000Z"
 }
 ```
+
+`category_id` adalah id kategori yang disimpan di transaksi. `category` adalah nama kategori itu saat response dibuat, supaya frontend bisa langsung menampilkannya tanpa request tambahan ke `GET /categories`.
 
 Field `created_at` dan `updated_at` belum dipakai frontend. Schema zod di frontend mengabaikan field tambahan, jadi kedua field ini aman ditambahkan.
 
@@ -268,8 +274,8 @@ Dipanggil saat pengguna membuka menu **Transaksi** (daftar transaksi bulan yang 
 |---|---|
 | `from`, `to` | ISO 8601 dengan offset. Batas waktu `occurred_at`, keduanya inklusif |
 | `type` | `income` atau `expense` |
-| `category` | Nama kategori persis, misalnya `Transportasi` |
-| `q` | Kata pencarian, 1-100 karakter setelah di-trim. Mencari di `note` dan `category` tanpa membedakan huruf besar dan kecil. `q=gojek` cocok dengan catatan "Gojek ke kantor" |
+| `category_id` | Id kategori, misalnya `cat_expense_transportasi` |
+| `q` | Kata pencarian, 1-100 karakter setelah di-trim. Mencari di `note` dan nama kategori tanpa membedakan huruf besar dan kecil. `q=gojek` cocok dengan catatan "Gojek ke kantor" |
 | `limit`, `cursor` | Lihat aturan pagination di bagian 1 |
 
 Urutannya selalu dari `occurred_at` terbaru. Kalau dua transaksi punya `occurred_at` yang sama, yang `id`-nya lebih besar ditaruh lebih dulu, supaya urutan antarhalaman tetap stabil.
@@ -283,6 +289,7 @@ Urutannya selalu dari `occurred_at` terbaru. Kalau dua transaksi punya `occurred
       "id": "trx_44004a5d-3f88-4dc2-9fc4-7a28153ee761",
       "type": "expense",
       "amount": 64000,
+      "category_id": "cat_expense_transportasi",
       "category": "Transportasi",
       "note": "Gojek ke kantor",
       "occurred_at": "2026-11-06T02:00:00.000Z",
@@ -318,9 +325,9 @@ Batas bulan dikirim oleh frontend lengkap dengan offset zona waktunya, sama sepe
     "income_count": 2,
     "expense_count": 6,
     "expense_by_category": [
-      { "category": "Tagihan", "amount": 1850000 },
-      { "category": "Makan & Minum", "amount": 1350000 },
-      { "category": "Transportasi", "amount": 64000 }
+      { "category_id": "cat_expense_tagihan", "category": "Tagihan", "amount": 1850000 },
+      { "category_id": "cat_expense_makanan", "category": "Makanan", "amount": 1350000 },
+      { "category_id": "cat_expense_transportasi", "category": "Transportasi", "amount": 64000 }
     ]
   }
 }
@@ -331,3 +338,92 @@ Batas bulan dikirim oleh frontend lengkap dengan offset zona waktunya, sama sepe
 **Gagal validasi: `400 VALIDATION_ERROR`**
 
 Kalau `from` atau `to` tidak dikirim, formatnya salah, atau `from` lebih besar dari `to`.
+
+### 4.6 Kategori (`GET /categories` dan `POST /categories`)
+
+Kategori disimpan di tabel `categories`. Ada dua macam kategori:
+
+- **Kategori bawaan** (`is_default: true`) dipakai semua pengguna dan tidak bisa diubah. Id-nya tetap, jadi frontend boleh memakainya langsung, misalnya untuk anggaran bawaan atau tebakan kategori di Catat cepat.
+- **Kategori kustom** (`is_default: false`) dibuat pengguna lewat chip **+ Kategori baru** di form Tambah transaksi. Kategori ini hanya terlihat dan bisa dipakai oleh pembuatnya.
+
+Setiap kategori punya satu jenis (`income` atau `expense`). Kategori kustom "Kos" yang dibuat untuk pengeluaran tidak muncul di pilihan pemasukan. Mengganti nama dan menghapus kategori belum tersedia.
+
+**Kategori bawaan**
+
+| `type` | `id` dan `name` |
+|---|---|
+| `expense` | `cat_expense_makanan` Makanan, `cat_expense_transportasi` Transportasi, `cat_expense_belanja` Belanja, `cat_expense_tagihan` Tagihan, `cat_expense_hiburan` Hiburan, `cat_expense_kesehatan` Kesehatan, `cat_expense_pendidikan` Pendidikan, `cat_expense_lainnya` Lainnya |
+| `income` | `cat_income_gaji` Gaji, `cat_income_freelance` Freelance, `cat_income_bonus` Bonus, `cat_income_hadiah` Hadiah, `cat_income_investasi` Investasi, `cat_income_lainnya` Lainnya |
+
+### `CategoryDto`
+
+```json
+{ "id": "cat_9f1c2a7e-0b3d-4c5e-8f6a-1b2c3d4e5f60", "name": "Kos", "type": "expense", "is_default": false }
+```
+
+**`GET /categories`**
+
+Dipanggil saat form **Tambah transaksi** dibuka (chip kategori sesuai jenis yang dipilih), dan saat menu **Transaksi** dibuka (pilihan filter Kategori). Mengembalikan kategori bawaan ditambah kategori kustom milik pemilik token.
+
+| Query | Aturan |
+|---|---|
+| `type` | Opsional, `income` atau `expense`. Tanpa `type`, kedua jenis dikembalikan |
+| `limit`, `cursor` | Lihat aturan pagination di bagian 1. Frontend memakai `limit=100` dan mengikuti `next_cursor` kalau ada |
+
+Urutannya: kategori bawaan dalam urutan tabel di atas, lalu kategori kustom dari yang paling lama dibuat.
+
+```json
+{
+  "data": [
+    { "id": "cat_expense_makanan", "name": "Makanan", "type": "expense", "is_default": true },
+    { "id": "cat_9f1c2a7e-0b3d-4c5e-8f6a-1b2c3d4e5f60", "name": "Kos", "type": "expense", "is_default": false }
+  ],
+  "page": { "limit": 100, "next_cursor": null }
+}
+```
+
+**`POST /categories`**
+
+Dipanggil saat pengguna mengetik nama di chip **+ Kategori baru** pada form Tambah transaksi lalu menekan Enter. `type` diambil dari jenis yang sedang dipilih di form.
+
+```json
+{ "name": "Kos", "type": "expense" }
+```
+
+| Field | Aturan |
+|---|---|
+| `name` | Wajib, 1-30 karakter setelah di-trim. Spasi berlebih di tengah dirapikan menjadi satu spasi |
+| `type` | Wajib, `income` atau `expense` |
+
+Sukses dibalas `201` dengan `CategoryDto`. Kalau nama yang sama sudah ada untuk jenis yang sama, baik kategori bawaan maupun kategori kustom milik pengguna itu, API membalas `409`. Perbandingannya tidak membedakan huruf besar dan kecil, jadi "kos" sama dengan "Kos".
+
+```json
+{
+  "error": {
+    "code": "CATEGORY_ALREADY_EXISTS",
+    "message": "Kategori Kos sudah ada",
+    "details": { "fieldErrors": { "name": ["Kategori Kos sudah ada"] } }
+  }
+}
+```
+
+### 4.7 Kategori di transaksi (`POST` dan `PATCH /transactions`)
+
+Body transaksi menyimpan kategori lewat `category_id`, bukan nama kategori. Contoh body `POST /transactions` dari form Tambah transaksi:
+
+```json
+{
+  "type": "expense",
+  "amount": 1500000,
+  "category_id": "cat_9f1c2a7e-0b3d-4c5e-8f6a-1b2c3d4e5f60",
+  "note": "Bayar kos Desember",
+  "occurred_at": "2026-11-24T09:00:00+07:00"
+}
+```
+
+`category_id` ditolak dengan `400 VALIDATION_ERROR` di `details.fieldErrors.category_id` pada dua kasus:
+
+- Kategori tidak ada, atau kategori kustom milik pengguna lain: "Kategori tidak ditemukan". Pesannya sama untuk kedua kasus, supaya keberadaan kategori pengguna lain tidak bocor.
+- Jenis kategori tidak cocok dengan jenis transaksi, misalnya `cat_income_gaji` untuk pengeluaran: "Kategori Gaji tidak bisa dipakai untuk pengeluaran".
+
+Pada `PATCH`, aturan ini dicek terhadap gabungan data lama dan perubahan. Mengubah `type` menjadi `income` tanpa mengganti `category_id` pengeluaran akan ditolak.

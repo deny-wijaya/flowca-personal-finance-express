@@ -74,12 +74,13 @@ Kolom **Status** menunjukkan apa yang sudah ada di boilerplate.
 | A2 | `POST /transactions` | Form **Tambah transaksi** di menu **Transaksi**, saat tombol simpan ditekan | Selesai |
 | A3 | `PATCH /transactions/:id` | Aksi **Ubah** di daftar transaksi (frontend belum ada) | Selesai di API |
 | A4 | `DELETE /transactions/:id` | Aksi **Hapus** di daftar transaksi (frontend belum ada) | Selesai di API |
-| A5 | Cursor pagination, filter `category`, dan pencarian `q` di `GET /transactions` (`API-CONTRACT.md` bagian 4.4). Pagination wajib untuk semua endpoint daftar | Daftar dan pencarian di menu **Transaksi** | Belum (Fase 3) |
+| A5 | Cursor pagination, filter kategori, dan pencarian `q` di `GET /transactions` (`API-CONTRACT.md` bagian 4.4). Pagination wajib untuk semua endpoint daftar | Daftar dan pencarian di menu **Transaksi** | Selesai (Fase 3) |
+| A6 | Kategori di tabel `categories`, `GET` dan `POST /categories`, transaksi menyimpan `category_id` (`API-CONTRACT.md` bagian 4.6 dan 4.7) | Chip kategori dan **+ Kategori baru** di form **Tambah transaksi**, filter Kategori di menu **Transaksi** | Belum |
 
 **Kriteria penerimaan A1-A4**
 
 - [x] Nominal harus bilangan bulat lebih dari 0 dan maksimal Rp 1.000.000.000.000.
-- [x] Kategori harus sesuai jenis. Pengeluaran: Makan & Minum, Transportasi, Tagihan, Belanja, Hiburan, Kesehatan, Lainnya. Pemasukan: Gaji, Bonus, Freelance, Investasi, Lainnya.
+- [x] Kategori harus sesuai jenis. Daftar kategori bawaan dan aturan kategori kustom ada di `API-CONTRACT.md` bagian 4.6.
 - [x] Tanggal transaksi tidak boleh di masa depan. Catatan opsional, maksimal 200 karakter.
 - [x] `PATCH` menggabungkan data lama dengan perubahan, lalu memvalidasi hasil akhirnya. Contohnya, mengubah jenis menjadi `income` tanpa mengganti kategori `Transportasi` akan ditolak.
 - [x] `GET` mengurutkan transaksi dari `occurred_at` terbaru dan mendukung filter `from`, `to`, `type`.
@@ -87,7 +88,7 @@ Kolom **Status** menunjukkan apa yang sudah ada di boilerplate.
 
 ### Epic B: Ringkasan (P1)
 
-- **B1. `GET /summary?from=...&to=...`** mengembalikan jumlah transaksi, total pemasukan, total pengeluaran, arus kas bersih, dan pengeluaran per kategori. Saat ini frontend menghitungnya sendiri dari daftar transaksi. Memindahkannya ke backend membuat hitungan bisa dilakukan oleh database (`GROUP BY`) dan tetap cepat walaupun data bertambah. Batas periode dikirim frontend lengkap dengan offset zona waktu, jadi pertanyaan terbuka soal zona waktu tetap dijawab di frontend. Kontraknya ada di `API-CONTRACT.md` bagian 4.5. Status: Belum (Fase 3).
+- **B1. `GET /summary?from=...&to=...`** mengembalikan jumlah transaksi, total pemasukan, total pengeluaran, arus kas bersih, dan pengeluaran per kategori. Saat ini frontend menghitungnya sendiri dari daftar transaksi. Memindahkannya ke backend membuat hitungan bisa dilakukan oleh database (`GROUP BY`) dan tetap cepat walaupun data bertambah. Batas periode dikirim frontend lengkap dengan offset zona waktu, jadi pertanyaan terbuka soal zona waktu tetap dijawab di frontend. Kontraknya ada di `API-CONTRACT.md` bagian 4.5. Status: Selesai (Fase 3).
 
 ### Epic C: Autentikasi (P1)
 
@@ -101,7 +102,7 @@ Status: Selesai (Fase 2). Register, login, middleware auth dan `GET /auth/me`, t
 
 ### Epic D: Fase 2 produk (P2)
 
-Anggaran per kategori, dompet, kategori kustom, dan export CSV mengikuti Epic D di PRD frontend. Endpoint-nya dirancang setelah Fase 3 selesai.
+Anggaran per kategori, dompet, dan export CSV mengikuti Epic D di PRD frontend. Endpoint-nya dirancang setelah Fase 3 selesai.
 
 ---
 
@@ -206,7 +207,7 @@ Setiap fase menghasilkan fitur yang berguna untuk frontend dan sekaligus satu to
 | 0. Boilerplate | 14 Nov 2026 | Struktur clean architecture, CRUD transaksi in-memory, error handler, logging, test | Middleware, router, alur request, dependency injection | Selesai |
 | 1. Database | 16-22 Nov 2026 | `PostgresTransactionRepository`, migration tabel `transactions`, Docker Compose untuk Postgres | SQL dasar, migration, ORM atau query builder, index | Selesai |
 | 2. Autentikasi | 23 Nov - 6 Des 2026 | Register, login, middleware auth, `user_id` di transaksi, rate limit login | Hash password, JWT, middleware dengan `req` yang membawa user, otorisasi per data | Selesai |
-| 3. Query lanjutan | 7-13 Des 2026 | Cursor pagination, pencarian `q`, `GET /summary` | Agregasi SQL (`SUM`, `GROUP BY`), pagination cursor vs offset | Belum |
+| 3. Query lanjutan | 7-13 Des 2026 | Cursor pagination, pencarian `q`, `GET /summary` | Agregasi SQL (`SUM`, `GROUP BY`), pagination cursor vs offset | Selesai |
 | 4. Production | 14-24 Des 2026 | Dockerfile, deploy, OpenAPI docs, monitoring error | Build image, env production, membaca log, dokumentasi API | Belum |
 
 **Definisi selesai setiap fase**
@@ -236,5 +237,5 @@ Tambahkan endpoint `GET /transactions/:id` yang membalas satu transaksi atau `40
 
 1. Apakah perhitungan per bulan memakai zona waktu `Asia/Jakarta` tetap, atau mengikuti zona waktu yang dikirim frontend?
 2. ~~Untuk Fase 1, mau memakai Prisma atau Drizzle?~~ **Diputuskan 15 Nov 2026: Drizzle** (drizzle-orm + drizzle-kit, driver `pg`), karena query-nya dekat dengan SQL sehingga sekalian belajar SQL.
-3. Kategori tetap disimpan sebagai teks, atau dibuat tabel `categories` sejak Fase 1 supaya kategori kustom (Epic D) lebih mudah?
+3. ~~Kategori tetap disimpan sebagai teks, atau dibuat tabel `categories`?~~ **Diputuskan 24 Nov 2026: tabel `categories`**. Transaksi menyimpan `category_id` dengan foreign key `ON DELETE NO ACTION` (kategori yang masih dipakai tidak bisa dihapus), dan pengguna bisa menambah kategori kustom per jenis langsung dari form Tambah transaksi (A6).
 4. Target deploy: VPS (belajar lebih banyak soal server) atau platform seperti Railway atau Fly.io (lebih cepat)?
