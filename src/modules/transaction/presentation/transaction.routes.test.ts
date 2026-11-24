@@ -6,6 +6,7 @@ import { createContainer } from "../../../di/container.ts";
 import { InMemoryUserRepository } from "../../auth/infrastructure/in-memory-user-repository.ts";
 import { JoseTokenIssuer } from "../../auth/infrastructure/jose-token-issuer.ts";
 import { InMemoryAccountRepository } from "../infrastructure/in-memory-account-repository.ts";
+import { InMemoryBudgetRepository } from "../infrastructure/in-memory-budget-repository.ts";
 import { InMemoryCategoryRepository } from "../infrastructure/in-memory-category-repository.ts";
 import { InMemoryTransactionRepository } from "../infrastructure/in-memory-transaction-repository.ts";
 
@@ -25,6 +26,7 @@ function buildApp() {
     transactionRepository,
     categoryRepository,
     accountRepository,
+    budgetRepository: new InMemoryBudgetRepository(categoryRepository),
     userRepository: new InMemoryUserRepository(),
     jwtSecret: JWT_SECRET,
     clock: { now: () => new Date("2026-11-14T10:00:00+07:00") },
@@ -201,7 +203,7 @@ describe("/api/v1/transactions", () => {
   });
 
   it("endpoint yang tidak ada membalas 404 ROUTE_NOT_FOUND", async () => {
-    const res = await api.get("/api/v1/budgets").expect(404);
+    const res = await api.get("/api/v1/laporan").expect(404);
     expect(res.body.error.code).toBe("ROUTE_NOT_FOUND");
   });
 });
@@ -383,5 +385,67 @@ describe("/api/v1/accounts", () => {
 
   it("wajib login", async () => {
     await request(app).get("/api/v1/accounts").expect(401);
+  });
+});
+
+describe("/api/v1/budgets", () => {
+  let app: ReturnType<typeof buildApp>;
+  let api: ReturnType<typeof request.agent>;
+  beforeEach(async () => {
+    app = buildApp();
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_test");
+    api = request.agent(app).set("Authorization", `Bearer ${token}`);
+  });
+
+  it("PUT membuat anggaran, PUT kedua mengganti nominalnya, GET mengembalikan satu anggaran", async () => {
+    const created = await api.put("/api/v1/budgets/cat_expense_makanan").send({ amount: 1_500_000 }).expect(200);
+    expect(created.body.data).toEqual({ category_id: "cat_expense_makanan", category: "Makanan", amount: 1_500_000 });
+
+    await api.put("/api/v1/budgets/cat_expense_makanan").send({ amount: 2_000_000 }).expect(200);
+
+    const list = await api.get("/api/v1/budgets").expect(200);
+    expect(list.body).toEqual({
+      data: [{ category_id: "cat_expense_makanan", category: "Makanan", amount: 2_000_000 }],
+      page: { limit: 20, next_cursor: null },
+    });
+  });
+
+  it("anggaran bisa memakai kategori kustom milik sendiri", async () => {
+    const kos = await api.post("/api/v1/categories").send({ name: "Kos", type: "expense" }).expect(201);
+    const res = await api.put(`/api/v1/budgets/${kos.body.data.id}`).send({ amount: 1_500_000 }).expect(200);
+    expect(res.body.data.category).toBe("Kos");
+  });
+
+  it("menolak nominal tidak valid, kategori pemasukan, dan kategori yang tidak ada", async () => {
+    for (const amount of [0, -5_000, 1.5]) {
+      const res = await api.put("/api/v1/budgets/cat_expense_makanan").send({ amount }).expect(400);
+      expect(res.body.error.details.fieldErrors.amount).toEqual(["Nominal anggaran harus bilangan bulat lebih dari 0"]);
+    }
+    const income = await api.put("/api/v1/budgets/cat_income_gaji").send({ amount: 1_000 }).expect(400);
+    expect(income.body.error.details.fieldErrors.category_id).toEqual(["Anggaran hanya untuk kategori pengeluaran"]);
+    const unknown = await api.put("/api/v1/budgets/cat_tidak_ada").send({ amount: 1_000 }).expect(404);
+    expect(unknown.body.error).toEqual({ code: "NOT_FOUND", message: "Kategori tidak ditemukan" });
+  });
+
+  it("DELETE menghapus anggaran, DELETE kedua dibalas 404", async () => {
+    await api.put("/api/v1/budgets/cat_expense_hiburan").send({ amount: 300_000 }).expect(200);
+    await api.delete("/api/v1/budgets/cat_expense_hiburan").expect(204);
+    await api.delete("/api/v1/budgets/cat_expense_hiburan").expect(404);
+    expect((await api.get("/api/v1/budgets").expect(200)).body.data).toEqual([]);
+  });
+
+  it("anggaran user lain tidak terlihat dan kategori kustom user lain tidak bisa dianggarkan", async () => {
+    await api.put("/api/v1/budgets/cat_expense_makanan").send({ amount: 1_500_000 }).expect(200);
+    const kos = await api.post("/api/v1/categories").send({ name: "Kos", type: "expense" }).expect(201);
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_budi");
+    const budi = request.agent(app).set("Authorization", `Bearer ${token}`);
+
+    expect((await budi.get("/api/v1/budgets").expect(200)).body.data).toEqual([]);
+    await budi.put(`/api/v1/budgets/${kos.body.data.id}`).send({ amount: 1_000 }).expect(404);
+    await budi.delete("/api/v1/budgets/cat_expense_makanan").expect(404);
+  });
+
+  it("wajib login", async () => {
+    await request(app).get("/api/v1/budgets").expect(401);
   });
 });

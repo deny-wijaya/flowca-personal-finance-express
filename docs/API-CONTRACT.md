@@ -82,6 +82,9 @@ Kita memakai cursor, bukan offset (`page=2`), karena data transaksi terus bertam
 | `DELETE` | `/transactions/:id` | Wajib | - | Kosong, status `204` |
 | `GET` | `/accounts` | Wajib | `limit`, `cursor`, semua opsional (lihat 4.8) | `AccountDto[]` dengan `page` |
 | `POST` | `/accounts` | Wajib | `{ name, kind, opening_balance }` (lihat 4.8) | `AccountDto`, status `201` |
+| `GET` | `/budgets` | Wajib | `limit`, `cursor`, semua opsional (lihat 4.10) | `BudgetDto[]` dengan `page` |
+| `PUT` | `/budgets/:category_id` | Wajib | `{ amount }` (lihat 4.10) | `BudgetDto` |
+| `DELETE` | `/budgets/:category_id` | Wajib | - | Kosong, status `204` |
 | `GET` | `/categories` | Wajib | `type`, `limit`, `cursor`, semua opsional (lihat 4.6) | `CategoryDto[]` dengan `page` |
 | `POST` | `/categories` | Wajib | `{ name, type }` (lihat 4.6) | `CategoryDto`, status `201` |
 | `POST` | `/auth/register` | Tidak | `{ name, email, password }` | `UserDto`, status `201` (lihat 4.1) |
@@ -500,3 +503,40 @@ Sukses dibalas `201` dengan `AccountDto` (saat baru dibuat, `balance` sama denga
 Akun yang tidak ada atau milik pengguna lain ditolak dengan `400 VALIDATION_ERROR` di `details.fieldErrors.account_id` dengan pesan "Akun tidak ditemukan". Pesannya sama untuk kedua kasus, supaya keberadaan akun pengguna lain tidak bocor.
 
 Transaksi lama yang belum punya akun tetap bisa dibaca. Kalau transaksi lama itu diubah lewat `PATCH` tanpa mengirim `account_id`, akunnya tetap kosong.
+
+### 4.10 Anggaran (`/budgets`)
+
+Anggaran adalah batas pengeluaran per kategori, misalnya Makanan Rp 1.500.000. Setiap pengguna punya paling banyak satu anggaran untuk satu kategori, dan hanya kategori pengeluaran yang bisa dianggarkan.
+
+**Anggaran berlaku setiap bulan sampai diubah.** Batas yang diatur di November juga dipakai untuk Desember dan bulan-bulan berikutnya. Kalau batasnya diubah, tampilan bulan-bulan sebelumnya juga ikut memakai batas baru. Backend tidak menyimpan pengeluaran yang terpakai. Frontend menggabungkan `GET /budgets` dengan `expense_by_category` dari `GET /summary` (bagian 4.5) berdasarkan `category_id`.
+
+### `BudgetDto`
+
+```json
+{ "category_id": "cat_expense_makanan", "category": "Makanan", "amount": 1500000 }
+```
+
+`category` adalah nama kategori saat response dibuat, supaya frontend bisa langsung menampilkannya.
+
+**`GET /budgets`**
+
+Dipanggil saat pengguna membuka menu **Anggaran** dan menu **Dashboard** (kartu Sisa anggaran). Mengembalikan anggaran milik pemilik token, urut dari yang paling lama dibuat, dengan standar pagination di bagian 1. Frontend memakai `limit=100` dan mengikuti `next_cursor` kalau ada.
+
+**`PUT /budgets/:category_id`**
+
+Dipanggil saat pengguna menyimpan nominal anggaran di menu **Anggaran**, baik dari **Tambah anggaran kategori** maupun saat mengubah nominal anggaran yang sudah ada. Kalau kategori itu belum punya anggaran, anggaran baru dibuat. Kalau sudah ada, nominalnya diganti. Mengirim request yang sama dua kali menghasilkan keadaan yang sama.
+
+```json
+{ "amount": 1500000 }
+```
+
+| Kondisi | Response |
+|---|---|
+| Berhasil | `200` dengan `BudgetDto` |
+| `amount` bukan bilangan bulat, 0 atau kurang, atau lebih dari Rp 1.000.000.000.000 | `400 VALIDATION_ERROR` di `details.fieldErrors.amount`, misalnya "Nominal anggaran harus bilangan bulat lebih dari 0" |
+| Kategori tidak ada, atau kategori kustom milik pengguna lain | `404 NOT_FOUND` dengan pesan "Kategori tidak ditemukan" |
+| Kategori pemasukan, misalnya `cat_income_gaji` | `400 VALIDATION_ERROR` di `details.fieldErrors.category_id` dengan pesan "Anggaran hanya untuk kategori pengeluaran" |
+
+**`DELETE /budgets/:category_id`**
+
+Dipanggil saat pengguna menghapus anggaran satu kategori di menu **Anggaran**. Berhasil dibalas `204` tanpa body. Kalau kategori itu tidak punya anggaran, dibalas `404 NOT_FOUND`. Transaksi di kategori itu tidak ikut terhapus.

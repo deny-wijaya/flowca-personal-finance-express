@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { NotFoundError, ValidationError } from "../../../shared/domain/errors.ts";
 import { InMemoryAccountRepository } from "../infrastructure/in-memory-account-repository.ts";
+import { InMemoryBudgetRepository } from "../infrastructure/in-memory-budget-repository.ts";
+import { DeleteBudget } from "./delete-budget.ts";
+import { ListBudgets } from "./list-budgets.ts";
+import { SetBudget } from "./set-budget.ts";
 import { InMemoryCategoryRepository } from "../infrastructure/in-memory-category-repository.ts";
 import { CreateAccount } from "./create-account.ts";
 import { ListAccounts } from "./list-accounts.ts";
@@ -262,6 +266,36 @@ describe("transaction use cases", () => {
       await new CreateAccount(accounts).execute(RANI, { name: "Tunai", kind: "cash", openingBalance: 0 });
       const page = await new ListAccounts(accounts).execute(RANI);
       expect(page.items.map((a) => a.name)).toEqual(["BCA", "Tunai"]);
+    });
+  });
+
+  describe("anggaran", () => {
+    it("SetBudget membuat lalu mengganti nominal, ListBudgets hanya berisi milik sendiri", async () => {
+      const budgets = new InMemoryBudgetRepository(categories);
+      const set = new SetBudget(budgets, categories);
+
+      await set.execute(RANI, "cat_expense_makanan", 1_500_000);
+      const updated = await set.execute(RANI, "cat_expense_makanan", 2_000_000);
+      await set.execute(BUDI, "cat_expense_makanan", 100_000);
+
+      expect(updated).toMatchObject({ category: "Makanan", amount: 2_000_000 });
+      expect((await new ListBudgets(budgets).execute(RANI)).items.map((b) => [b.category, b.amount])).toEqual([["Makanan", 2_000_000]]);
+    });
+
+    it("SetBudget menolak nominal tidak valid, kategori pemasukan, dan kategori kustom user lain", async () => {
+      const set = new SetBudget(new InMemoryBudgetRepository(categories), categories);
+      const kosBudi = await new CreateCategory(categories).execute(BUDI, { name: "Kos", type: "expense" });
+
+      await expect(set.execute(RANI, "cat_expense_makanan", 0)).rejects.toThrow("Nominal anggaran harus bilangan bulat lebih dari 0");
+      await expect(set.execute(RANI, "cat_income_gaji", 1_000)).rejects.toThrow("Anggaran hanya untuk kategori pengeluaran");
+      await expect(set.execute(RANI, kosBudi.id, 1_000)).rejects.toThrow(NotFoundError);
+    });
+
+    it("DeleteBudget melempar NotFoundError kalau kategori itu tidak punya anggaran", async () => {
+      const budgets = new InMemoryBudgetRepository(categories);
+      await new SetBudget(budgets, categories).execute(RANI, "cat_expense_hiburan", 300_000);
+      await new DeleteBudget(budgets).execute(RANI, "cat_expense_hiburan");
+      await expect(new DeleteBudget(budgets).execute(RANI, "cat_expense_hiburan")).rejects.toThrow(NotFoundError);
     });
   });
 });
