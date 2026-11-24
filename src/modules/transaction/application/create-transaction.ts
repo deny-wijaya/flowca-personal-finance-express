@@ -12,8 +12,8 @@ export class CreateTransaction {
     this.#clock = clock;
   }
 
-  async execute(input: NewTransaction): Promise<Transaction> {
+  async execute(userId: string, input: NewTransaction): Promise<Transaction> {
     assertValidTransaction(input, this.#clock.now());
-    return this.#repository.create(input);
+    return this.#repository.create(userId, input);
   }
 }

@@ -9,8 +9,8 @@ export class GetTransaction {
     this.#repository = repository;
   }
 
-  async execute(id: string): Promise<Transaction> {
-    const existing = await this.#repository.findById(id);
+  async execute(userId: string, id: string): Promise<Transaction> {
+    const existing = await this.#repository.findById(userId, id);
     if(!existing) throw new NotFoundError("Data Tidak ditemukan")
     return existing;
   }

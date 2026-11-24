@@ -197,7 +197,7 @@ npm install
 cp .env.example .env
 docker compose up -d --wait   # Postgres 18 on localhost:5433
 npm run db:migrate            # create the transactions table
-npm run db:seed               # add 8 sample transactions for this month
+npm run db:seed -- you@email.com  # add 8 sample transactions for this month to a registered user
 npm run dev                   # http://localhost:4000/api/v1, restarts on file changes
 ```
 
@@ -243,7 +243,7 @@ DATABASE_URL=postgres://finance:finance@localhost:5433/personal_finance_test npm
 | `npm run db:migrate` | Applies pending migrations to `DATABASE_URL` |
 | `npm run db:check` | Fails if the `*.table.ts` schema and the migrations in `drizzle/` don't match |
 | `npm run db:studio` | Opens a web UI to browse the tables |
-| `npm run db:seed` | Inserts sample transactions (safe to run more than once) |
+| `npm run db:seed -- <email>` | Inserts sample transactions for a registered user (safe to run more than once) |
 
 ## Project structure
 

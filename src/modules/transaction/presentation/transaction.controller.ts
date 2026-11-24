@@ -1,4 +1,5 @@
 import type { RequestHandler } from "express";
+import { authOf } from "../../../shared/http/middlewares/require-auth.ts";
 import { parseRequest } from "../../../shared/http/validate.ts";
 import type { CreateTransaction } from "../application/create-transaction.ts";
 import type { DeleteTransaction } from "../application/delete-transaction.ts";
@@ -16,7 +17,7 @@ import {
 
 export type TransactionUseCases = {
   listTransactions: ListTransactions;
-  getTransaction: GetTransaction
+  getTransaction: GetTransaction;
   createTransaction: CreateTransaction;
   updateTransaction: UpdateTransaction;
   deleteTransaction: DeleteTransaction;
@@ -25,38 +26,42 @@ export type TransactionUseCases = {
 /**
  * Controller sengaja tipis. Tugasnya hanya tiga:
  * 1) validasi request, 2) panggil use case, 3) bentuk response.
+ * Router /transactions dipasangi requireAuth, jadi `authOf(req).userId` selalu berisi pemilik token.
  * Tidak ada try/catch karena Express 5 meneruskan error async ke errorHandler.
  */
 export function createTransactionController(useCases: TransactionUseCases) {
   const list: RequestHandler = async (req, res) => {
     const filter = parseRequest(listTransactionsQuerySchema, req.query);
-    const transactions = await useCases.listTransactions.execute(filter);
+    const transactions = await useCases.listTransactions.execute(authOf(req).userId, filter);
     res.json({ data: transactions.map(toTransactionDto) });
   };
 
   const get: RequestHandler = async (req, res) => {
-    const {id} = parseRequest(transactionIdParamsSchema, req.params);
-   const transaction = await useCases.getTransaction.execute(id);
+    const { id } = parseRequest(transactionIdParamsSchema, req.params);
+    const transaction = await useCases.getTransaction.execute(authOf(req).userId, id);
     res.json({ data: toTransactionDto(transaction) });
-  }
+  };
 
   const create: RequestHandler = async (req, res) => {
     const body = parseRequest(createTransactionBodySchema, req.body);
     const { occurred_at, ...rest } = body;
-    const transaction = await useCases.createTransaction.execute({ ...rest, occurredAt: occurred_at });
+    const transaction = await useCases.createTransaction.execute(authOf(req).userId, { ...rest, occurredAt: occurred_at });
     res.status(201).json({ data: toTransactionDto(transaction) });
   };
 
   const update: RequestHandler = async (req, res) => {
     const { id } = parseRequest(transactionIdParamsSchema, req.params);
     const { occurred_at, ...rest } = parseRequest(updateTransactionBodySchema, req.body);
-    const transaction = await useCases.updateTransaction.execute(id, { ...rest, occurredAt: occurred_at });
+    const transaction = await useCases.updateTransaction.execute(authOf(req).userId, id, {
+      ...rest,
+      occurredAt: occurred_at,
+    });
     res.json({ data: toTransactionDto(transaction) });
   };
 
   const remove: RequestHandler = async (req, res) => {
     const { id } = parseRequest(transactionIdParamsSchema, req.params);
-    await useCases.deleteTransaction.execute(id);
+    await useCases.deleteTransaction.execute(authOf(req).userId, id);
     res.status(204).end();
   };
 

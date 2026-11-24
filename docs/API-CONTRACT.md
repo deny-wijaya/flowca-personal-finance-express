@@ -69,7 +69,9 @@ Pesan error 4xx ditulis dalam bahasa Indonesia karena frontend menampilkannya la
 
 Kalau header `Authorization` tidak ada sama sekali, `message` berisi "Kamu perlu masuk dulu." Frontend cukup memeriksa `code`, bukan isi `message`.
 
-Frontend sebaiknya menghapus token yang tersimpan dan mengarahkan pengguna ke layar Login setiap kali menerima `401 UNAUTHORIZED`. Untuk saat ini semua pengguna yang login masih melihat transaksi yang sama; pemisahan transaksi per pengguna (`user_id`) menyusul di Fase 2.
+Frontend sebaiknya menghapus token yang tersimpan dan mengarahkan pengguna ke layar Login setiap kali menerima `401 UNAUTHORIZED`.
+
+**Transaksi bersifat per pengguna.** Setiap transaksi dimiliki oleh pengguna yang membuatnya (pemilik token saat `POST /transactions`). `GET /transactions` hanya mengembalikan transaksi milik pemilik token. Membuka, mengubah, atau menghapus transaksi milik pengguna lain dibalas `404 NOT_FOUND`, sama persis dengan transaksi yang memang tidak ada, supaya keberadaan data pengguna lain tidak bocor. `TransactionDto` tidak membawa id pemiliknya.
 
 ### `TransactionDto`
 

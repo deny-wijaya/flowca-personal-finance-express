@@ -12,6 +12,10 @@ export const transactions = pgTable(
   "transactions",
   {
     id: text("id").primaryKey(),
+    // Pemilik transaksi. Foreign key ke users.id (ON DELETE CASCADE) ditulis langsung di
+    // drizzle/0002_transactions_user_id.sql, karena aturan arsitektur melarang file ini meng-import
+    // tabel users dari modul auth.
+    userId: text("user_id").notNull(),
     type: transactionType("type").notNull(),
     // mode "number": tanpa ini driver pg mengembalikan bigint sebagai string.
     // Aman karena MAX_TRANSACTION_AMOUNT (Rp1 triliun) jauh di bawah Number.MAX_SAFE_INTEGER.
@@ -22,6 +26,7 @@ export const transactions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  // Dashboard dan menu Transaksi selalu memfilter dan mengurutkan berdasarkan occurred_at.
-  (table) => [index("transactions_occurred_at_idx").on(table.occurredAt)],
+  // Dashboard dan menu Transaksi selalu memfilter berdasarkan pemilik lalu rentang occurred_at,
+  // jadi index gabungan (user_id, occurred_at) dipakai untuk kedua kondisi sekaligus.
+  (table) => [index("transactions_user_id_occurred_at_idx").on(table.userId, table.occurredAt)],
 );
