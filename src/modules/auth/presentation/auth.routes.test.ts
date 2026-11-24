@@ -158,6 +158,44 @@ describe("GET /api/v1/auth/me", () => {
   });
 });
 
+describe("PATCH /api/v1/auth/me", () => {
+  let app: ReturnType<typeof buildApp>;
+  let token: string;
+  beforeEach(async () => {
+    app = buildApp();
+    await request(app).post("/api/v1/auth/register").send(rani).expect(201);
+    token = (await request(app).post("/api/v1/auth/login").send(rani).expect(200)).body.data.access_token;
+  });
+
+  it("mengganti nama (di-trim), dan GET /me ikut memakai nama baru", async () => {
+    const res = await request(app).patch("/api/v1/auth/me").set("Authorization", `Bearer ${token}`).send({ name: "  Rani  " }).expect(200);
+    expect(res.body.data).toMatchObject({ name: "Rani", email: "rani@email.com" });
+
+    const me = await request(app).get("/api/v1/auth/me").set("Authorization", `Bearer ${token}`).expect(200);
+    expect(me.body.data.name).toBe("Rani");
+  });
+
+  it("menolak nama kosong dan nama lebih dari 100 karakter", async () => {
+    const empty = await request(app).patch("/api/v1/auth/me").set("Authorization", `Bearer ${token}`).send({ name: "   " }).expect(400);
+    expect(empty.body.error.details.fieldErrors.name).toEqual(["Nama wajib diisi"]);
+    const long = await request(app).patch("/api/v1/auth/me").set("Authorization", `Bearer ${token}`).send({ name: "a".repeat(101) }).expect(400);
+    expect(long.body.error.details.fieldErrors.name).toEqual(["Nama maksimal 100 karakter"]);
+  });
+
+  it("email tidak ikut berubah walaupun dikirim", async () => {
+    const res = await request(app)
+      .patch("/api/v1/auth/me")
+      .set("Authorization", `Bearer ${token}`)
+      .send({ name: "Rani", email: "lain@email.com" })
+      .expect(200);
+    expect(res.body.data.email).toBe("rani@email.com");
+  });
+
+  it("wajib login", async () => {
+    await request(app).patch("/api/v1/auth/me").send({ name: "Rani" }).expect(401);
+  });
+});
+
 describe("Rate limit POST /api/v1/auth/login", () => {
   let app: ReturnType<typeof buildApp>;
   beforeEach(async () => {

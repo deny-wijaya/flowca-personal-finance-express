@@ -17,5 +17,6 @@ export function createAuthRouter(controller: AuthController, { requireAuth, logi
   router.post("/register", controller.register);
   router.post("/login", loginLimit, controller.login);
   router.get("/me", requireAuth, controller.me);
+  router.patch("/me", requireAuth, controller.updateMe);
   return router;
 }

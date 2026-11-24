@@ -12,4 +12,6 @@ export interface UserRepository {
    * termasuk saat dua request register dengan email yang sama datang bersamaan.
    */
   create(input: NewUser): Promise<User>;
+  /** Mengganti nama user. null kalau user dengan id itu tidak ada. */
+  updateName(id: string, name: string): Promise<User | null>;
 }

@@ -21,4 +21,12 @@ export class InMemoryUserRepository implements UserRepository {
     this.#rows.set(user.id, user);
     return user;
   }
+
+  async updateName(id: string, name: string): Promise<User | null> {
+    const user = this.#rows.get(id);
+    if (!user) return null;
+    const updated = { ...user, name };
+    this.#rows.set(id, updated);
+    return updated;
+  }
 }

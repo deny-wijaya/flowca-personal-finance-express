@@ -38,4 +38,10 @@ export class PostgresUserRepository implements UserRepository {
       throw error;
     }
   }
+
+  async updateName(id: string, name: string): Promise<User | null> {
+    // returning() mengembalikan baris setelah diubah; array kosong kalau id tidak ditemukan.
+    const [row] = await this.#db.update(users).set({ name }).where(eq(users.id, id)).returning();
+    return row ?? null;
+  }
 }
