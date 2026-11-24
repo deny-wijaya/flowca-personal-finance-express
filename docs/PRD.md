@@ -97,7 +97,7 @@ Kolom **Status** menunjukkan apa yang sudah ada di boilerplate.
 - **C4.** Setiap transaksi punya `user_id`. Pengguna hanya bisa melihat dan mengubah transaksinya sendiri. Mengakses transaksi milik orang lain membalas `404`, bukan `403`, supaya keberadaan data orang lain tidak bocor.
 - **C5.** Endpoint login dibatasi 5 percobaan per menit per IP (rate limit).
 
-Status: C1 sampai C4 selesai (register, login, middleware auth dan `GET /auth/me`, transaksi per pengguna). C5 (rate limit login) belum.
+Status: Selesai (Fase 2). Register, login, middleware auth dan `GET /auth/me`, transaksi per pengguna, dan rate limit login (5 gagal per menit per IP).
 
 ### Epic D: Fase 2 produk (P2)
 
@@ -185,6 +185,7 @@ Env dibaca dan divalidasi hanya di `src/config/env.ts`. Konfigurasi yang salah m
 | `DATABASE_URL` | - | Ditambahkan di Fase 1 |
 | `JWT_SECRET` | - | Wajib, minimal 32 karakter. Kunci tanda tangan JWT. Buat dengan `openssl rand -base64 48`, jangan di-commit |
 | `JWT_EXPIRES_IN` | `86400` | Masa berlaku access token dalam detik (1 hari) |
+| `TRUST_PROXY` | `loopback` | Alamat yang boleh mengirim `X-Forwarded-For` (IP asli user dari server Next). Dipakai rate limit login |
 
 ---
 
@@ -203,8 +204,8 @@ Setiap fase menghasilkan fitur yang berguna untuk frontend dan sekaligus satu to
 | Fase | Periode | Yang dibangun | Yang dipelajari | Status |
 |---|---|---|---|---|
 | 0. Boilerplate | 14 Nov 2026 | Struktur clean architecture, CRUD transaksi in-memory, error handler, logging, test | Middleware, router, alur request, dependency injection | Selesai |
-| 1. Database | 16-22 Nov 2026 | `PostgresTransactionRepository`, migration tabel `transactions`, Docker Compose untuk Postgres | SQL dasar, migration, ORM atau query builder, index | Belum |
-| 2. Autentikasi | 23 Nov - 6 Des 2026 | Register, login, middleware auth, `user_id` di transaksi, rate limit login | Hash password, JWT, middleware dengan `req` yang membawa user, otorisasi per data | Belum |
+| 1. Database | 16-22 Nov 2026 | `PostgresTransactionRepository`, migration tabel `transactions`, Docker Compose untuk Postgres | SQL dasar, migration, ORM atau query builder, index | Selesai |
+| 2. Autentikasi | 23 Nov - 6 Des 2026 | Register, login, middleware auth, `user_id` di transaksi, rate limit login | Hash password, JWT, middleware dengan `req` yang membawa user, otorisasi per data | Selesai |
 | 3. Query lanjutan | 7-13 Des 2026 | Pagination, pencarian `q`, `GET /summary/monthly` | Agregasi SQL (`SUM`, `GROUP BY`), pagination cursor vs offset | Belum |
 | 4. Production | 14-24 Des 2026 | Dockerfile, deploy, OpenAPI docs, monitoring error | Build image, env production, membaca log, dokumentasi API | Belum |
 

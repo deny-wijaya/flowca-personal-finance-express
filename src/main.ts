@@ -15,6 +15,7 @@ const app = createApp({
   container,
   logger,
   apiPrefix: env.API_PREFIX,
+  trustProxy: env.TRUST_PROXY,
   corsOrigins: env.CORS_ORIGINS,
 });
 

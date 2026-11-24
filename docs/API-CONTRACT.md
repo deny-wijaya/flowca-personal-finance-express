@@ -197,6 +197,23 @@ Kalau `email` atau `password` kosong, atau format email salah. Bentuknya sama de
 
 Pesan dan waktu respons sengaja dibuat sama untuk email yang tidak terdaftar dan password yang salah, supaya penyerang tidak bisa mengetahui email mana yang terdaftar (user enumeration). Karena itu response ini tidak membawa `details.fieldErrors`.
 
+**Terlalu banyak percobaan gagal: `429 TOO_MANY_REQUESTS`**
+
+Login yang gagal (400 atau 401) dibatasi **5 kali per menit per alamat IP pengguna**. Login yang berhasil tidak dihitung. Percobaan berikutnya di menit yang sama dibalas:
+
+```json
+{
+  "error": {
+    "code": "TOO_MANY_REQUESTS",
+    "message": "Terlalu banyak percobaan masuk. Coba lagi dalam 1 menit."
+  }
+}
+```
+
+Response ini juga membawa header `Retry-After` (jumlah detik sampai jatah percobaan dipulihkan) dan header `RateLimit`/`RateLimit-Policy` standar.
+
+**IP pengguna dikirim lewat `X-Forwarded-For`.** Request login ke API dikirim oleh server Next, bukan langsung oleh browser, jadi alamat IP yang dilihat API adalah IP server Next. Supaya batasnya berlaku per pengguna, frontend wajib meneruskan IP browser di header `X-Forwarded-For`. API hanya mempercayai header ini dari alamat yang diizinkan di env `TRUST_PROXY` (bawaannya `loopback`, yaitu server di mesin yang sama). Dari alamat lain, header ini diabaikan supaya tidak bisa dipalsukan.
+
 ### 4.3 Profil pengguna yang sedang login (`GET /auth/me`)
 
 Dipakai frontend untuk menampilkan nama dan email di kartu profil, dan untuk memastikan token di cookie masih berlaku. Wajib membawa header `Authorization: Bearer <access_token>`.

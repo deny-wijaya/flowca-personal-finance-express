@@ -8,6 +8,7 @@ import { createAuthRouter } from "./modules/auth/presentation/auth.routes.ts";
 import { createTransactionRouter } from "./modules/transaction/presentation/transaction.routes.ts";
 import type { Logger } from "./shared/logger/logger.ts";
 import { errorHandler } from "./shared/http/middlewares/error-handler.ts";
+import { createFailedAttemptLimit } from "./shared/http/middlewares/rate-limit.ts";
 import { createRequireAuth } from "./shared/http/middlewares/require-auth.ts";
 import { notFoundHandler } from "./shared/http/middlewares/not-found.ts";
 
@@ -16,6 +17,8 @@ export type AppOptions = {
   logger: Logger;
   apiPrefix: string;
   corsOrigins: string[];
+  /** Nilai "trust proxy" Express. Bawaannya "loopback": hanya percaya X-Forwarded-For dari 127.0.0.1 / ::1. */
+  trustProxy?: string;
 };
 
 /**
@@ -29,13 +32,23 @@ export function createRouterApp(container: Container): Router {
   // requireAuth dipasang per router, bukan untuk semua route: /auth/register dan /auth/login
   // harus bisa dipanggil oleh user yang belum punya token.
   const requireAuth = createRequireAuth((token) => container.tokenVerifier.verify(token));
+  // PRD C5: maksimal 5 login gagal per menit per IP user.
+  const loginLimit = createFailedAttemptLimit({
+    windowMs: 60_000,
+    limit: 5,
+    message: "Terlalu banyak percobaan masuk. Coba lagi dalam 1 menit.",
+  });
   router.use("/transactions", requireAuth, createTransactionRouter(container.transactionController));
-  router.use("/auth", createAuthRouter(container.authController, requireAuth));
+  router.use("/auth", createAuthRouter(container.authController, { requireAuth, loginLimit }));
   return router;
 }
 
-export function createApp({ container, logger, apiPrefix, corsOrigins }: AppOptions): Express {
+export function createApp({ container, logger, apiPrefix, corsOrigins, trustProxy = "loopback" }: AppOptions): Express {
   const app = express();
+  // Request ke API datang dari server Next, bukan langsung dari browser. Dengan pengaturan ini,
+  // `req.ip` diambil dari header X-Forwarded-For, tapi hanya kalau request datang dari alamat
+  // yang dipercaya. Dari alamat lain header itu diabaikan, jadi IP tidak bisa dipalsukan.
+  app.set("trust proxy", trustProxy);
 
   // Logger dipasang paling awal supaya `req.log` sudah tersedia untuk semua middleware berikutnya,
   // termasuk saat express.json() gagal membaca body.

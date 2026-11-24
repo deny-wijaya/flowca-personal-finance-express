@@ -151,3 +151,65 @@ describe("GET /api/v1/auth/me", () => {
     await request(app).get("/api/v1/auth/me").set("Authorization", "Basic cmFuaTpyYWhhc2lh").expect(401);
   });
 });
+
+describe("Rate limit POST /api/v1/auth/login", () => {
+  let app: ReturnType<typeof buildApp>;
+  beforeEach(async () => {
+    app = buildApp();
+    await request(app).post("/api/v1/auth/register").send(rani).expect(201);
+  });
+
+  const wrong = { email: "rani@email.com", password: "salah1234" };
+  // supertest terhubung dari 127.0.0.1 (loopback, dipercaya), jadi X-Forwarded-For dipakai sebagai IP user.
+  const fromIp = (ip: string) => request(app).post("/api/v1/auth/login").set("X-Forwarded-For", ip);
+
+  it("5 login gagal dari IP yang sama lolos, yang ke-6 dibalas 429 dengan Retry-After", async () => {
+    for (let i = 0; i < 5; i++) await fromIp("203.0.113.10").send(wrong).expect(401);
+
+    const res = await fromIp("203.0.113.10").send(wrong).expect(429);
+    expect(res.body.error).toEqual({
+      code: "TOO_MANY_REQUESTS",
+      message: "Terlalu banyak percobaan masuk. Coba lagi dalam 1 menit.",
+    });
+    expect(Number(res.headers["retry-after"])).toBeGreaterThan(0);
+
+    // Password benar pun ditolak selama masih dalam jendela 1 menit.
+    await fromIp("203.0.113.10").send(rani).expect(429);
+  });
+
+  it("IP lain tidak ikut terkunci", async () => {
+    for (let i = 0; i < 5; i++) await fromIp("203.0.113.10").send(wrong).expect(401);
+    await fromIp("203.0.113.10").send(wrong).expect(429);
+
+    await fromIp("198.51.100.20").send(rani).expect(200);
+  });
+
+  it("login yang berhasil tidak dihitung", async () => {
+    for (let i = 0; i < 6; i++) await fromIp("203.0.113.10").send(rani).expect(200);
+    await fromIp("203.0.113.10").send(wrong).expect(401);
+  });
+});
+
+describe("X-Forwarded-For dari alamat yang tidak dipercaya", () => {
+  it("diabaikan, jadi mengganti IP palsu di setiap request tidak memberi jatah percobaan baru", async () => {
+    // trustProxy diisi IP lain, sehingga supertest (127.0.0.1) bukan proxy yang dipercaya.
+    const container = createContainer({
+      transactionRepository: new InMemoryTransactionRepository(),
+      userRepository: new InMemoryUserRepository(),
+      jwtSecret: "kunci-rahasia-test-yang-panjangnya-lebih-dari-32-karakter",
+    });
+    const app = createApp({
+      container,
+      logger: pino({ level: "silent" }),
+      apiPrefix: "/api/v1",
+      corsOrigins: [],
+      trustProxy: "10.0.0.1",
+    });
+    const wrong = { email: "rani@email.com", password: "salah1234" };
+
+    for (let i = 0; i < 5; i++) {
+      await request(app).post("/api/v1/auth/login").set("X-Forwarded-For", `198.51.100.${i}`).send(wrong).expect(401);
+    }
+    await request(app).post("/api/v1/auth/login").set("X-Forwarded-For", "198.51.100.99").send(wrong).expect(429);
+  });
+});
