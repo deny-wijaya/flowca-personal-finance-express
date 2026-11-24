@@ -4,12 +4,14 @@ import { parseRequest } from "../../../shared/http/validate.ts";
 import type { GetCurrentUser } from "../application/get-current-user.ts";
 import type { LoginUser } from "../application/login-user.ts";
 import type { RegisterUser } from "../application/register-user.ts";
-import { loginBodySchema, registerBodySchema, toAccessTokenDto, toUserDto } from "./auth.schemas.ts";
+import type { UpdateProfile } from "../application/update-profile.ts";
+import { loginBodySchema, registerBodySchema, toAccessTokenDto, toUserDto, updateProfileBodySchema } from "./auth.schemas.ts";
 
 export type AuthUseCases = {
   registerUser: RegisterUser;
   loginUser: LoginUser;
   getCurrentUser: GetCurrentUser;
+  updateProfile: UpdateProfile;
 };
 
 /**
@@ -36,7 +38,14 @@ export function createAuthController(useCases: AuthUseCases) {
     res.json({ data: toUserDto(user) });
   };
 
-  return { register, login, me };
+  /** PATCH /auth/me: mengganti nama dari onboarding. Dipasangi requireAuth seperti GET /me. */
+  const updateMe: RequestHandler = async (req, res) => {
+    const body = parseRequest(updateProfileBodySchema, req.body);
+    const user = await useCases.updateProfile.execute(authOf(req).userId, body);
+    res.json({ data: toUserDto(user) });
+  };
+
+  return { register, login, me, updateMe };
 }
 
 export type AuthController = ReturnType<typeof createAuthController>;

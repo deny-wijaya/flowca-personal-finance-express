@@ -90,6 +90,7 @@ Kita memakai cursor, bukan offset (`page=2`), karena data transaksi terus bertam
 | `POST` | `/auth/register` | Tidak | `{ name, email, password }` | `UserDto`, status `201` (lihat 4.1) |
 | `POST` | `/auth/login` | Tidak | `{ email, password }` | `{ access_token, expires_in }` (lihat 4.2) |
 | `GET` | `/auth/me` | Wajib | - | `UserDto` (lihat 4.3) |
+| `PATCH` | `/auth/me` | Wajib | `{ name }` (lihat 4.3) | `UserDto` |
 
 **Endpoint yang wajib login** harus membawa header `Authorization: Bearer <access_token>`, dengan token dari `POST /auth/login`. Kalau header tidak ada, token-nya rusak, tanda tangannya tidak cocok, atau sudah kedaluwarsa, API membalas `401 UNAUTHORIZED`:
 
@@ -251,7 +252,7 @@ Response ini juga membawa header `Retry-After` (jumlah detik sampai jatah percob
 
 **IP pengguna dikirim lewat `X-Forwarded-For`.** Request login ke API dikirim oleh server Next, bukan langsung oleh browser, jadi alamat IP yang dilihat API adalah IP server Next. Supaya batasnya berlaku per pengguna, frontend wajib meneruskan IP browser di header `X-Forwarded-For`. API hanya mempercayai header ini dari alamat yang diizinkan di env `TRUST_PROXY` (bawaannya `loopback`, yaitu server di mesin yang sama). Dari alamat lain, header ini diabaikan supaya tidak bisa dipalsukan.
 
-### 4.3 Profil pengguna yang sedang login (`GET /auth/me`)
+### 4.3 Profil pengguna yang sedang login (`GET` dan `PATCH /auth/me`)
 
 Dipakai frontend untuk menampilkan nama dan email di kartu profil, dan untuk memastikan token di cookie masih berlaku. Wajib membawa header `Authorization: Bearer <access_token>`.
 
@@ -273,6 +274,16 @@ Bentuknya sama dengan `UserDto` di bagian 4.1.
 **Gagal: `401 UNAUTHORIZED`**
 
 Kalau token tidak ada atau tidak valid, sama seperti endpoint lain yang wajib login (lihat bagian 3). Juga dibalas `401` kalau token-nya valid tapi akun pemiliknya sudah tidak ada.
+
+**`PATCH /auth/me`: mengganti nama**
+
+Dipanggil dari langkah pertama onboarding ("Nama tampilan"), saat pengguna menekan **Ke dashboard** di langkah terakhir. Nanti juga dipakai menu **Pengaturan**. Nama ini yang tampil di sapaan Dashboard ("Halo, Rani") dan di kartu profil, karena aplikasi hanya menyimpan satu nama per pengguna.
+
+```json
+{ "name": "Rani" }
+```
+
+Aturan `name` sama dengan saat register (bagian 4.1): wajib, 1-100 karakter setelah di-trim. Sukses dibalas `200` dengan `UserDto` yang sudah memakai nama baru. Nama kosong dibalas `400 VALIDATION_ERROR` dengan pesan di `details.fieldErrors.name`. Email dan password tidak bisa diubah lewat endpoint ini.
 
 ### 4.4 Daftar transaksi (`GET /transactions`)
 

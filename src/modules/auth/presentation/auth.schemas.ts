@@ -7,12 +7,17 @@ import { MAX_EMAIL_LENGTH, MAX_NAME_LENGTH, type User } from "../domain/user.ts"
  * Di sini hanya dicek BENTUK data (wajib diisi, format email, panjang).
  * Aturan password (huruf + angka, tanpa "flowca") adalah aturan bisnis, jadi dicek di domain.
  */
-export const registerBodySchema = z.object({
-  name: z
-    .string({ message: "Nama lengkap wajib diisi" })
+/** Aturan nama dipakai bersama oleh register dan PATCH /auth/me; hanya pesan "wajib diisi" yang berbeda. */
+function nameSchema(requiredMessage: string) {
+  return z
+    .string({ message: requiredMessage })
     .trim()
-    .min(1, "Nama lengkap wajib diisi")
-    .max(MAX_NAME_LENGTH, `Nama maksimal ${MAX_NAME_LENGTH} karakter`),
+    .min(1, requiredMessage)
+    .max(MAX_NAME_LENGTH, `Nama maksimal ${MAX_NAME_LENGTH} karakter`);
+}
+
+export const registerBodySchema = z.object({
+  name: nameSchema("Nama lengkap wajib diisi"),
   email: z
     .string({ message: "Email wajib diisi" })
     .trim()
@@ -23,6 +28,9 @@ export const registerBodySchema = z.object({
 });
 
 /** Login hanya memeriksa bentuk. Aturan password tidak dicek di sini, karena password cukup dicocokkan dengan hash. */
+/** Body PATCH /auth/me (API-CONTRACT.md bagian 4.3). Hanya nama yang bisa diubah. */
+export const updateProfileBodySchema = z.object({ name: nameSchema("Nama wajib diisi") });
+
 export const loginBodySchema = z.object({
   email: z
     .string({ message: "Email wajib diisi" })

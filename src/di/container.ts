@@ -1,6 +1,7 @@
 import { GetCurrentUser } from "../modules/auth/application/get-current-user.ts";
 import { LoginUser } from "../modules/auth/application/login-user.ts";
 import { RegisterUser } from "../modules/auth/application/register-user.ts";
+import { UpdateProfile } from "../modules/auth/application/update-profile.ts";
 import type { PasswordHasher } from "../modules/auth/domain/password-hasher.ts";
 import type { TokenIssuer } from "../modules/auth/domain/token-issuer.ts";
 import type { TokenVerifier } from "../modules/auth/domain/token-verifier.ts";
@@ -110,6 +111,7 @@ export function createContainer(overrides: ContainerOverrides = {}) {
     registerUser: new RegisterUser(userRepository, passwordHasher),
     loginUser: new LoginUser(userRepository, passwordHasher, tokenIssuer),
     getCurrentUser: new GetCurrentUser(userRepository),
+    updateProfile: new UpdateProfile(userRepository),
   });
 
   // Satu pool dipakai bersama oleh semua repository Postgres, dan ditutup sekali saat shutdown.

@@ -39,6 +39,14 @@ describe.skipIf(!url)("PostgresUserRepository", () => {
     expect(await repository.findById("usr_tidak_ada")).toBeNull();
   });
 
+  it("updateName mengganti nama dan mengembalikan user terbaru, atau null untuk id yang tidak ada", async () => {
+    const created = await repository.create(rani);
+    const updated = await repository.updateName(created.id, "Rani");
+    expect(updated).toEqual({ ...created, name: "Rani" });
+    expect(await repository.findById(created.id)).toEqual(updated);
+    expect(await repository.updateName("usr_tidak_ada", "Siapa")).toBeNull();
+  });
+
   it("findByEmail mengembalikan null untuk email yang tidak terdaftar", async () => {
     expect(await repository.findByEmail("tidak.ada@email.com")).toBeNull();
   });
