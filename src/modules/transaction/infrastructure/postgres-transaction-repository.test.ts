@@ -3,7 +3,8 @@ import { createDatabase } from "../../../shared/database/database.ts";
 import { users } from "../../auth/infrastructure/user.table.ts";
 import type { NewTransaction } from "../domain/transaction.ts";
 import { PostgresTransactionRepository } from "./postgres-transaction-repository.ts";
-import { accounts, categories, transactions } from "./transaction.table.ts";
+import { accounts, budgets, categories, transactions } from "./transaction.table.ts";
+import { PostgresBudgetRepository } from "./postgres-budget-repository.ts";
 import { PostgresAccountRepository } from "./postgres-account-repository.ts";
 import { AccountAlreadyExistsError } from "../domain/account.ts";
 import { PostgresCategoryRepository } from "./postgres-category-repository.ts";
@@ -27,6 +28,7 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
   const repository = new PostgresTransactionRepository(db);
   const categoryRepository = new PostgresCategoryRepository(db);
   const accountRepository = new PostgresAccountRepository(db);
+  const budgetRepository = new PostgresBudgetRepository(db);
 
   const gaji: NewTransaction = {
     type: "income",
@@ -48,6 +50,7 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
   beforeEach(async () => {
     await db.delete(transactions);
     await db.delete(accounts);
+    await db.delete(budgets);
     // Kategori bawaan (dari migration) tetap ada; hanya kategori kustom dari test sebelumnya yang dihapus.
     await db.delete(categories).where(isNotNull(categories.userId));
     await db
@@ -351,6 +354,46 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
       await expect(db.delete(accounts).where(eq(accounts.id, dompet.id))).rejects.toThrow();
       await db.delete(users).where(eq(users.id, temp));
       expect(await accountRepository.findById(temp, dompet.id)).toBeNull();
+    });
+  });
+
+  describe("anggaran", () => {
+    it("upsert memakai ON CONFLICT: dua kali PUT tetap satu baris dengan nominal terakhir", async () => {
+      await budgetRepository.upsert(RANI, "cat_expense_makanan", 1_500_000);
+      const updated = await budgetRepository.upsert(RANI, "cat_expense_makanan", 2_000_000);
+      expect(updated).toMatchObject({ categoryId: "cat_expense_makanan", category: "Makanan", amount: 2_000_000 });
+
+      const page = await budgetRepository.list(RANI, { limit: 20 });
+      expect(page.items.map((b) => [b.categoryId, b.amount])).toEqual([["cat_expense_makanan", 2_000_000]]);
+      expect((await budgetRepository.list(BUDI, { limit: 20 })).items).toEqual([]);
+    });
+
+    it("dua upsert bersamaan untuk kategori yang sama tidak membuat baris dobel", async () => {
+      await Promise.all([
+        budgetRepository.upsert(RANI, "cat_expense_tagihan", 100_000),
+        budgetRepository.upsert(RANI, "cat_expense_tagihan", 200_000),
+      ]);
+      expect((await budgetRepository.list(RANI, { limit: 20 })).items).toHaveLength(1);
+    });
+
+    it("list anggaran memakai keyset pagination tanpa item dobel", async () => {
+      for (const id of ["cat_expense_makanan", "cat_expense_belanja", "cat_expense_hiburan"]) await budgetRepository.upsert(RANI, id, 100_000);
+      const first = await budgetRepository.list(RANI, { limit: 2 });
+      const second = await budgetRepository.list(RANI, { limit: 2, after: first.nextCursor! });
+      const all = await budgetRepository.list(RANI, { limit: 100 });
+      expect([...first.items, ...second.items].map((b) => b.categoryId)).toEqual(all.items.map((b) => b.categoryId));
+      expect(all.items).toHaveLength(3);
+    });
+
+    it("delete mengembalikan true sekali, lalu false; menghapus kategori kustom ikut menghapus anggarannya", async () => {
+      await budgetRepository.upsert(RANI, "cat_expense_hiburan", 300_000);
+      expect(await budgetRepository.delete(RANI, "cat_expense_hiburan")).toBe(true);
+      expect(await budgetRepository.delete(RANI, "cat_expense_hiburan")).toBe(false);
+
+      const kos = await categoryRepository.create(RANI, { name: "Kos", type: "expense" });
+      await budgetRepository.upsert(RANI, kos.id, 1_500_000);
+      await db.delete(categories).where(eq(categories.id, kos.id));
+      expect((await budgetRepository.list(RANI, { limit: 20 })).items).toEqual([]);
     });
   });
 });

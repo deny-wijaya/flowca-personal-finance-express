@@ -5,6 +5,7 @@ import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import type { Container } from "./di/container.ts";
 import { createAccountRouter } from "./modules/transaction/presentation/account.routes.ts";
+import { createBudgetRouter } from "./modules/transaction/presentation/budget.routes.ts";
 import { createCategoryRouter } from "./modules/transaction/presentation/category.routes.ts";
 import { createAuthRouter } from "./modules/auth/presentation/auth.routes.ts";
 import { createSummaryRouter, createTransactionRouter } from "./modules/transaction/presentation/transaction.routes.ts";
@@ -44,6 +45,7 @@ export function createRouterApp(container: Container): Router {
   router.use("/summary", requireAuth, createSummaryRouter(container.transactionController));
   router.use("/categories", requireAuth, createCategoryRouter(container.categoryController));
   router.use("/accounts", requireAuth, createAccountRouter(container.accountController));
+  router.use("/budgets", requireAuth, createBudgetRouter(container.budgetController));
   router.use("/auth", createAuthRouter(container.authController, { requireAuth, loginLimit }));
   return router;
 }

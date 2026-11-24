@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigint, index, pgEnum, pgTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { bigint, index, pgEnum, pgTable, primaryKey, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
 import { ACCOUNT_KINDS, MAX_ACCOUNT_NAME_LENGTH } from "../domain/account.ts";
 import { MAX_CATEGORY_NAME_LENGTH } from "../domain/category.ts";
 import { MAX_NOTE_LENGTH, TRANSACTION_TYPES } from "../domain/transaction.ts";
@@ -93,3 +93,25 @@ export const transactions = pgTable(
     index("transactions_account_id_idx").on(table.accountId),
   ],
 );
+
+/**
+ * Anggaran per kategori pengeluaran, berlaku setiap bulan sampai diubah (API-CONTRACT.md bagian 4.10).
+ * Primary key gabungan (user_id, category_id) menjamin satu user hanya punya satu anggaran per kategori,
+ * jadi tabel ini tidak butuh kolom id sendiri.
+ * Foreign key user_id ke users.id (ON DELETE CASCADE) ditulis langsung di migration 0008.
+ */
+export const budgets = pgTable(
+  "budgets",
+  {
+    userId: text("user_id").notNull(),
+    // Anggaran tidak berarti tanpa kategorinya, jadi ikut terhapus kalau kategorinya dihapus.
+    categoryId: text("category_id")
+      .notNull()
+      .references(() => categories.id, { onDelete: "cascade" }),
+    amount: bigint("amount", { mode: "number" }).notNull(),
+    // precision 3 (milidetik) karena dipakai di cursor pagination, sama seperti accounts.created_at.
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
+  },
+  (table) => [primaryKey({ columns: [table.userId, table.categoryId] })],
+);
+
