@@ -31,6 +31,26 @@ File ini satu-satunya sumber kebenaran untuk kontrak API antara `express-persona
 
 Pesan error 4xx ditulis dalam bahasa Indonesia karena frontend menampilkannya langsung ke pengguna. Pesan error 5xx selalu generik ("Terjadi kesalahan di server") supaya detail internal tidak bocor, dan detail aslinya hanya ditulis ke log.
 
+**Pagination (wajib untuk setiap endpoint yang mengembalikan daftar)**
+
+Tidak ada endpoint yang mengembalikan seluruh isi tabel sekaligus. Setiap endpoint daftar memakai cursor pagination dengan aturan yang sama:
+
+- Query `limit` menentukan jumlah item per halaman. Bawaannya `20`, minimal `1`, maksimal `100`.
+- Query `cursor` diisi dengan `next_cursor` dari response sebelumnya untuk mengambil halaman berikutnya. Halaman pertama dikirim tanpa `cursor`.
+- Response membawa objek `page` di samping `data`. Kalau `next_cursor` bernilai `null`, berarti tidak ada halaman berikutnya.
+- Isi `cursor` tidak boleh dibaca atau dibuat sendiri oleh frontend. Cukup kirim ulang apa adanya.
+- Saat filter berubah (misalnya pengguna mengetik kata pencarian baru), frontend mulai lagi dari halaman pertama tanpa `cursor`.
+- `limit` di luar batas atau `cursor` yang rusak dibalas `400 VALIDATION_ERROR` dengan pesan di `details.fieldErrors.limit` atau `details.fieldErrors.cursor`.
+
+```json
+{
+  "data": [ ],
+  "page": { "limit": 20, "next_cursor": "eyJvIjoiMjAyNi0xMS0wNlQwMjowMDowMC4wMDBaIiwiaSI6InRyeF8uLi4ifQ" }
+}
+```
+
+Kita memakai cursor, bukan offset (`page=2`), karena data transaksi terus bertambah. Dengan offset, transaksi baru yang masuk saat pengguna sedang menggulir daftar membuat item bergeser, sehingga ada item yang muncul dua kali atau terlewat. Response tidak membawa jumlah total item, karena menghitung total butuh query `COUNT` tambahan di setiap halaman. Jumlah transaksi per periode diambil dari `GET /summary` (lihat 4.5).
+
 ## 2. Daftar kode error
 
 | Status | `code` | Kapan terjadi |
@@ -52,7 +72,8 @@ Pesan error 4xx ditulis dalam bahasa Indonesia karena frontend menampilkannya la
 | Method | Path | Login | Query / Body | Response `data` |
 |---|---|---|---|---|
 | `GET` | `/health` (tanpa prefix) | Tidak | - | `{ status, uptime_seconds }` |
-| `GET` | `/transactions` | Wajib | `from`, `to` (ISO 8601), `type` (`income` / `expense`), semua opsional | `TransactionDto[]` |
+| `GET` | `/transactions` | Wajib | `from`, `to`, `type`, `category`, `q`, `limit`, `cursor`, semua opsional (lihat 4.4) | `TransactionDto[]` dengan `page` |
+| `GET` | `/summary` | Wajib | `from`, `to` wajib (lihat 4.5) | `SummaryDto` |
 | `GET` | `/transactions/:id` | Wajib | - | `TransactionDto` |
 | `POST` | `/transactions` | Wajib | `{ type, amount, category, note?, occurred_at }` | `TransactionDto`, status `201` |
 | `PATCH` | `/transactions/:id` | Wajib | Minimal satu field dari body `POST` | `TransactionDto` |
@@ -236,3 +257,77 @@ Bentuknya sama dengan `UserDto` di bagian 4.1.
 **Gagal: `401 UNAUTHORIZED`**
 
 Kalau token tidak ada atau tidak valid, sama seperti endpoint lain yang wajib login (lihat bagian 3). Juga dibalas `401` kalau token-nya valid tapi akun pemiliknya sudah tidak ada.
+
+### 4.4 Daftar transaksi (`GET /transactions`)
+
+Dipanggil saat pengguna membuka menu **Transaksi** (daftar transaksi bulan yang dipilih) dan menu **Dashboard** (kartu transaksi terakhir). Hanya mengembalikan transaksi milik pemilik token.
+
+**Query** (semuanya opsional)
+
+| Query | Aturan |
+|---|---|
+| `from`, `to` | ISO 8601 dengan offset. Batas waktu `occurred_at`, keduanya inklusif |
+| `type` | `income` atau `expense` |
+| `category` | Nama kategori persis, misalnya `Transportasi` |
+| `q` | Kata pencarian, 1-100 karakter setelah di-trim. Mencari di `note` dan `category` tanpa membedakan huruf besar dan kecil. `q=gojek` cocok dengan catatan "Gojek ke kantor" |
+| `limit`, `cursor` | Lihat aturan pagination di bagian 1 |
+
+Urutannya selalu dari `occurred_at` terbaru. Kalau dua transaksi punya `occurred_at` yang sama, yang `id`-nya lebih besar ditaruh lebih dulu, supaya urutan antarhalaman tetap stabil.
+
+**Sukses: `200`**
+
+```json
+{
+  "data": [
+    {
+      "id": "trx_44004a5d-3f88-4dc2-9fc4-7a28153ee761",
+      "type": "expense",
+      "amount": 64000,
+      "category": "Transportasi",
+      "note": "Gojek ke kantor",
+      "occurred_at": "2026-11-06T02:00:00.000Z",
+      "created_at": "2026-11-06T02:00:00.000Z",
+      "updated_at": "2026-11-06T02:00:00.000Z"
+    }
+  ],
+  "page": { "limit": 20, "next_cursor": null }
+}
+```
+
+### 4.5 Ringkasan periode (`GET /summary`)
+
+Dipanggil saat pengguna membuka menu **Dashboard** (kartu pemasukan, pengeluaran, arus kas, dan pengeluaran per kategori) dan menu **Transaksi** (jumlah transaksi bulan ini). Hitungannya dilakukan oleh database dengan `SUM` dan `GROUP BY`, jadi tidak perlu mengambil semua transaksi ke frontend. Hanya menghitung transaksi milik pemilik token.
+
+**Query**
+
+| Query | Aturan |
+|---|---|
+| `from`, `to` | Wajib, ISO 8601 dengan offset, keduanya inklusif. Untuk satu bulan November 2026 di WIB: `from=2026-11-01T00:00:00+07:00` dan `to=2026-11-30T23:59:59.999+07:00` |
+
+Batas bulan dikirim oleh frontend lengkap dengan offset zona waktunya, sama seperti `GET /transactions`. Dengan begitu backend tidak perlu menebak zona waktu pengguna.
+
+**Sukses: `200`**
+
+```json
+{
+  "data": {
+    "total_income": 12500000,
+    "total_expense": 3264000,
+    "net_cashflow": 9236000,
+    "transaction_count": 8,
+    "income_count": 2,
+    "expense_count": 6,
+    "expense_by_category": [
+      { "category": "Tagihan", "amount": 1850000 },
+      { "category": "Makan & Minum", "amount": 1350000 },
+      { "category": "Transportasi", "amount": 64000 }
+    ]
+  }
+}
+```
+
+`net_cashflow` adalah `total_income - total_expense` dan bisa negatif. `income_count` dan `expense_count` adalah jumlah transaksi per jenis, yang ditampilkan sebagai "N transaksi" di kartu Masuk dan Keluar menu Dashboard. `expense_by_category` diurutkan dari nominal terbesar (kalau nominalnya sama, urut nama kategori A-Z) dan hanya berisi kategori yang punya pengeluaran di periode itu. Kalau tidak ada transaksi, semua angka bernilai `0` dan `expense_by_category` berupa array kosong.
+
+**Gagal validasi: `400 VALIDATION_ERROR`**
+
+Kalau `from` atau `to` tidak dikirim, formatnya salah, atau `from` lebih besar dari `to`.

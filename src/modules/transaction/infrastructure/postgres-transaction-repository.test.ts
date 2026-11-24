@@ -12,6 +12,7 @@ import { transactions } from "./transaction.table.ts";
  * Kolom user_id punya foreign key ke users.id, jadi dua user uji (Rani dan Budi) dibuat dulu.
  */
 const RANI = "usr_test_rani";
+const firstPage = { limit: 20 };
 const BUDI = "usr_test_budi";
 const url = process.env.TEST_DATABASE_URL;
 
@@ -81,22 +82,23 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
     await repository.create(RANI, gojek);
     await repository.create(RANI, { ...gaji, category: "Freelance", occurredAt: new Date("2026-11-08T09:00:00+07:00") });
 
-    const all = await repository.list(RANI);
-    expect(all.map((trx) => trx.category)).toEqual(["Freelance", "Transportasi", "Gaji"]);
+    const all = await repository.list(RANI, {}, firstPage);
+    expect(all.items.map((trx) => trx.category)).toEqual(["Freelance", "Transportasi", "Gaji"]);
 
-    const income = await repository.list(RANI, { type: "income" });
-    expect(income.map((trx) => trx.category)).toEqual(["Freelance", "Gaji"]);
+    const income = await repository.list(RANI, { type: "income" }, firstPage);
+    expect(income.items.map((trx) => trx.category)).toEqual(["Freelance", "Gaji"]);
   });
 
   it("list memfilter rentang from dan to (inklusif)", async () => {
     await repository.create(RANI, gaji);
     await repository.create(RANI, gojek);
 
-    const result = await repository.list(RANI, {
-      from: new Date("2026-11-06T09:00:00+07:00"),
-      to: new Date("2026-11-30T23:59:59+07:00"),
-    });
-    expect(result.map((trx) => trx.note)).toEqual(["Gojek ke kantor"]);
+    const result = await repository.list(
+      RANI,
+      { from: new Date("2026-11-06T09:00:00+07:00"), to: new Date("2026-11-30T23:59:59+07:00") },
+      firstPage,
+    );
+    expect(result.items.map((trx) => trx.note)).toEqual(["Gojek ke kantor"]);
   });
 
   it("update mengubah nominal dan memajukan updatedAt", async () => {
@@ -121,7 +123,7 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
   it("transaksi milik Budi tidak terbaca, tidak bisa diubah, dan tidak bisa dihapus oleh Rani", async () => {
     const milikBudi = await repository.create(BUDI, gojek);
 
-    expect(await repository.list(RANI)).toEqual([]);
+    expect(await repository.list(RANI, {}, firstPage)).toEqual({ items: [], nextCursor: null });
     expect(await repository.findById(RANI, milikBudi.id)).toBeNull();
     await expect(repository.update(RANI, milikBudi.id, { ...gojek, amount: 1 })).rejects.toThrow();
     await repository.delete(RANI, milikBudi.id);
@@ -132,5 +134,76 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
 
   it("foreign key menolak transaksi untuk user yang tidak ada", async () => {
     await expect(repository.create("usr_tidak_ada", gojek)).rejects.toThrow();
+  });
+
+  it("summarize menjumlahkan dengan SUM dan GROUP BY, hanya milik user itu di dalam periode", async () => {
+    const november = { from: new Date("2026-11-01T00:00:00+07:00"), to: new Date("2026-11-30T23:59:59.999+07:00") };
+    await repository.create(RANI, gaji);
+    await repository.create(RANI, gojek);
+    await repository.create(RANI, { ...gojek, amount: 900_000_000_000, category: "Tagihan", note: "Nominal besar" });
+    await repository.create(RANI, { ...gojek, occurredAt: new Date("2026-10-31T23:00:00+07:00") });
+    await repository.create(BUDI, gojek);
+
+    expect(await repository.summarize(RANI, november)).toEqual({
+      totalIncome: 12_500_000,
+      totalExpense: 900_000_064_000,
+      transactionCount: 3,
+      incomeCount: 1,
+      expenseCount: 2,
+      expenseByCategory: [
+        { category: "Tagihan", amount: 900_000_000_000 },
+        { category: "Transportasi", amount: 64_000 },
+      ],
+    });
+  });
+
+  it("summarize mengembalikan 0 dan array kosong kalau tidak ada transaksi", async () => {
+    const range = { from: new Date("2026-11-01T00:00:00+07:00"), to: new Date("2026-11-30T23:59:59.999+07:00") };
+    expect(await repository.summarize(RANI, range)).toEqual({
+      totalIncome: 0,
+      totalExpense: 0,
+      transactionCount: 0,
+      incomeCount: 0,
+      expenseCount: 0,
+      expenseByCategory: [],
+    });
+  });
+
+  it("list keyset: halaman berikutnya mulai tepat sesudah cursor, termasuk untuk occurred_at yang sama", async () => {
+    // 5 transaksi di jam yang sama: urutan di antara mereka ditentukan oleh id.
+    for (let i = 0; i < 5; i++) await repository.create(RANI, { ...gojek, note: `Gojek ${i}` });
+    await repository.create(RANI, gaji);
+
+    const seen: string[] = [];
+    let page = await repository.list(RANI, {}, { limit: 4 });
+    seen.push(...page.items.map((trx) => trx.id));
+    expect(page.nextCursor).not.toBeNull();
+    page = await repository.list(RANI, {}, { limit: 4, after: page.nextCursor! });
+    seen.push(...page.items.map((trx) => trx.id));
+
+    expect(page.nextCursor).toBeNull();
+    expect(seen).toHaveLength(6);
+    expect(new Set(seen).size).toBe(6);
+    const all = await repository.list(RANI, {}, { limit: 100 });
+    expect(seen).toEqual(all.items.map((trx) => trx.id));
+    expect(all.items.at(-1)?.category).toBe("Gaji");
+  });
+
+  it("list memfilter category dan q (ILIKE di note dan category), dengan % diperlakukan sebagai teks", async () => {
+    await repository.create(RANI, gojek);
+    await repository.create(RANI, gaji);
+    await repository.create(RANI, { ...gojek, category: "Belanja", note: "Diskon 50% Superindo" });
+
+    const byCategory = await repository.list(RANI, { category: "Transportasi" }, firstPage);
+    expect(byCategory.items.map((trx) => trx.note)).toEqual(["Gojek ke kantor"]);
+
+    const byNote = await repository.list(RANI, { q: "GOJEK" }, firstPage);
+    expect(byNote.items.map((trx) => trx.note)).toEqual(["Gojek ke kantor"]);
+
+    const byCategoryText = await repository.list(RANI, { q: "gaj" }, firstPage);
+    expect(byCategoryText.items.map((trx) => trx.category)).toEqual(["Gaji"]);
+
+    const percent = await repository.list(RANI, { q: "0%" }, firstPage);
+    expect(percent.items.map((trx) => trx.category)).toEqual(["Belanja"]);
   });
 });

@@ -74,7 +74,7 @@ Kolom **Status** menunjukkan apa yang sudah ada di boilerplate.
 | A2 | `POST /transactions` | Form **Tambah transaksi** di menu **Transaksi**, saat tombol simpan ditekan | Selesai |
 | A3 | `PATCH /transactions/:id` | Aksi **Ubah** di daftar transaksi (frontend belum ada) | Selesai di API |
 | A4 | `DELETE /transactions/:id` | Aksi **Hapus** di daftar transaksi (frontend belum ada) | Selesai di API |
-| A5 | Pagination dan pencarian `q` di `GET /transactions` | Filter di menu **Transaksi** | Belum (Fase 3) |
+| A5 | Cursor pagination, filter `category`, dan pencarian `q` di `GET /transactions` (`API-CONTRACT.md` bagian 4.4). Pagination wajib untuk semua endpoint daftar | Daftar dan pencarian di menu **Transaksi** | Belum (Fase 3) |
 
 **Kriteria penerimaan A1-A4**
 
@@ -87,7 +87,7 @@ Kolom **Status** menunjukkan apa yang sudah ada di boilerplate.
 
 ### Epic B: Ringkasan (P1)
 
-- **B1. `GET /summary/monthly?month=2026-11`** mengembalikan total pemasukan, total pengeluaran, arus kas bersih, dan pengeluaran per kategori. Saat ini frontend menghitungnya sendiri dari daftar transaksi. Memindahkannya ke backend membuat hitungan bisa dilakukan oleh database (`GROUP BY`) dan tetap cepat walaupun data bertambah. Status: Belum (Fase 3).
+- **B1. `GET /summary?from=...&to=...`** mengembalikan jumlah transaksi, total pemasukan, total pengeluaran, arus kas bersih, dan pengeluaran per kategori. Saat ini frontend menghitungnya sendiri dari daftar transaksi. Memindahkannya ke backend membuat hitungan bisa dilakukan oleh database (`GROUP BY`) dan tetap cepat walaupun data bertambah. Batas periode dikirim frontend lengkap dengan offset zona waktu, jadi pertanyaan terbuka soal zona waktu tetap dijawab di frontend. Kontraknya ada di `API-CONTRACT.md` bagian 4.5. Status: Belum (Fase 3).
 
 ### Epic C: Autentikasi (P1)
 
@@ -206,7 +206,7 @@ Setiap fase menghasilkan fitur yang berguna untuk frontend dan sekaligus satu to
 | 0. Boilerplate | 14 Nov 2026 | Struktur clean architecture, CRUD transaksi in-memory, error handler, logging, test | Middleware, router, alur request, dependency injection | Selesai |
 | 1. Database | 16-22 Nov 2026 | `PostgresTransactionRepository`, migration tabel `transactions`, Docker Compose untuk Postgres | SQL dasar, migration, ORM atau query builder, index | Selesai |
 | 2. Autentikasi | 23 Nov - 6 Des 2026 | Register, login, middleware auth, `user_id` di transaksi, rate limit login | Hash password, JWT, middleware dengan `req` yang membawa user, otorisasi per data | Selesai |
-| 3. Query lanjutan | 7-13 Des 2026 | Pagination, pencarian `q`, `GET /summary/monthly` | Agregasi SQL (`SUM`, `GROUP BY`), pagination cursor vs offset | Belum |
+| 3. Query lanjutan | 7-13 Des 2026 | Cursor pagination, pencarian `q`, `GET /summary` | Agregasi SQL (`SUM`, `GROUP BY`), pagination cursor vs offset | Belum |
 | 4. Production | 14-24 Des 2026 | Dockerfile, deploy, OpenAPI docs, monitoring error | Build image, env production, membaca log, dokumentasi API | Belum |
 
 **Definisi selesai setiap fase**

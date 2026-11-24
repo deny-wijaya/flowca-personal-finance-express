@@ -4,6 +4,7 @@ import { InMemoryTransactionRepository } from "../infrastructure/in-memory-trans
 import type { Clock } from "./clock.ts";
 import { CreateTransaction } from "./create-transaction.ts";
 import { DeleteTransaction } from "./delete-transaction.ts";
+import { GetSummary } from "./get-summary.ts";
 import { GetTransaction } from "./get-transaction.ts";
 import { ListTransactions } from "./list-transactions.ts";
 import { UpdateTransaction } from "./update-transaction.ts";
@@ -48,7 +49,26 @@ describe("transaction use cases", () => {
     await create.execute(RANI, { type: "income", amount: 12_500_000, category: "Gaji", note: null, occurredAt: new Date("2026-11-01T09:00:00+07:00") });
 
     const expenses = await new ListTransactions(repository).execute(RANI, { type: "expense" });
-    expect(expenses.map((t) => t.occurredAt.getDate())).toEqual([9, 2]);
+    expect(expenses.items.map((t) => t.occurredAt.getDate())).toEqual([9, 2]);
+    expect(expenses.nextCursor).toBeNull();
+  });
+
+  it("ListTransactions membagi hasil per halaman dan cursor melanjutkan tanpa dobel atau terlewat", async () => {
+    // Tiga transaksi di jam yang sama: urutannya ditentukan id, jadi cursor wajib menyimpan id juga.
+    for (const note of ["A", "B", "C", "D", "E"]) {
+      await create.execute(RANI, { ...makanSiang, note, occurredAt: new Date(`2026-11-0${note === "E" ? 1 : 6}T12:00:00+07:00`) });
+    }
+    const list = new ListTransactions(repository);
+
+    const first = await list.execute(RANI, {}, { limit: 2 });
+    const second = await list.execute(RANI, {}, { limit: 2, after: first.nextCursor! });
+    const third = await list.execute(RANI, {}, { limit: 2, after: second.nextCursor! });
+
+    const notes = [...first.items, ...second.items, ...third.items].map((t) => t.note);
+    expect(notes).toHaveLength(5);
+    expect(new Set(notes).size).toBe(5);
+    expect(notes.at(-1)).toBe("E");
+    expect(third.nextCursor).toBeNull();
   });
 
   it("UpdateTransaction menolak ganti type tanpa ganti kategori", async () => {
@@ -71,7 +91,7 @@ describe("transaction use cases", () => {
   describe("transaksi milik user lain", () => {
     it("tidak muncul di daftar milik Rani", async () => {
       await create.execute(BUDI, makanSiang);
-      expect(await new ListTransactions(repository).execute(RANI)).toEqual([]);
+      expect(await new ListTransactions(repository).execute(RANI)).toEqual({ items: [], nextCursor: null });
     });
 
     it("dianggap tidak ada saat dibuka, diubah, atau dihapus Rani (NotFoundError)", async () => {
@@ -85,6 +105,49 @@ describe("transaction use cases", () => {
 
       // Transaksi Budi tetap utuh.
       expect(await repository.findById(BUDI, milikBudi.id)).toEqual(milikBudi);
+    });
+  });
+
+  describe("GetSummary", () => {
+    const november = { from: new Date("2026-11-01T00:00:00+07:00"), to: new Date("2026-11-30T23:59:59.999+07:00") };
+    const gaji = { type: "income" as const, amount: 12_500_000, category: "Gaji", note: null, occurredAt: new Date("2026-11-01T09:00:00+07:00") };
+    const kos = { type: "expense" as const, amount: 1_850_000, category: "Tagihan", note: "Cicilan kos", occurredAt: new Date("2026-11-02T09:00:00+07:00") };
+
+    it("menjumlahkan pemasukan, pengeluaran, arus kas, dan pengeluaran per kategori", async () => {
+      await create.execute(RANI, gaji);
+      await create.execute(RANI, kos);
+      await create.execute(RANI, makanSiang);
+      await create.execute(RANI, { ...makanSiang, amount: 15_000, note: "Es teh" });
+
+      const summary = await new GetSummary(repository).execute(RANI, november);
+
+      expect(summary).toEqual({
+        totalIncome: 12_500_000,
+        totalExpense: 1_950_000,
+        netCashflow: 10_550_000,
+        transactionCount: 4,
+        incomeCount: 1,
+        expenseCount: 3,
+        expenseByCategory: [
+          { category: "Tagihan", amount: 1_850_000 },
+          { category: "Makan & Minum", amount: 100_000 },
+        ],
+      });
+    });
+
+    it("hanya menghitung transaksi milik user itu dan di dalam periode", async () => {
+      await create.execute(RANI, { ...kos, occurredAt: new Date("2026-10-31T23:59:00+07:00") });
+      await create.execute(BUDI, kos);
+
+      const summary = await new GetSummary(repository).execute(RANI, november);
+
+      expect(summary).toEqual({ totalIncome: 0, totalExpense: 0, netCashflow: 0, transactionCount: 0, incomeCount: 0, expenseCount: 0, expenseByCategory: [] });
+    });
+
+    it("arus kas bersih bisa negatif", async () => {
+      await create.execute(RANI, kos);
+      const summary = await new GetSummary(repository).execute(RANI, november);
+      expect(summary.netCashflow).toBe(-1_850_000);
     });
   });
 });
