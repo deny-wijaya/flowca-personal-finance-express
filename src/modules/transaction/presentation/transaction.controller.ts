@@ -1,14 +1,19 @@
 import type { RequestHandler } from "express";
 import { authOf } from "../../../shared/http/middlewares/require-auth.ts";
+import { toPageDto } from "../../../shared/http/pagination.ts";
 import { parseRequest } from "../../../shared/http/validate.ts";
 import type { CreateTransaction } from "../application/create-transaction.ts";
 import type { DeleteTransaction } from "../application/delete-transaction.ts";
 import type { ListTransactions } from "../application/list-transactions.ts";
 import type { UpdateTransaction } from "../application/update-transaction.ts";
 import type { GetTransaction } from "../application/get-transaction.ts";
+import type { GetSummary } from "../application/get-summary.ts";
 import {
   createTransactionBodySchema,
+  encodeTransactionCursor,
   listTransactionsQuerySchema,
+  summaryQuerySchema,
+  toSummaryDto,
   toTransactionDto,
   transactionIdParamsSchema,
   updateTransactionBodySchema,
@@ -21,6 +26,7 @@ export type TransactionUseCases = {
   createTransaction: CreateTransaction;
   updateTransaction: UpdateTransaction;
   deleteTransaction: DeleteTransaction;
+  getSummary: GetSummary;
 };
 
 /**
@@ -31,9 +37,10 @@ export type TransactionUseCases = {
  */
 export function createTransactionController(useCases: TransactionUseCases) {
   const list: RequestHandler = async (req, res) => {
-    const filter = parseRequest(listTransactionsQuerySchema, req.query);
-    const transactions = await useCases.listTransactions.execute(authOf(req).userId, filter);
-    res.json({ data: transactions.map(toTransactionDto) });
+    const { limit, cursor, ...filter } = parseRequest(listTransactionsQuerySchema, req.query);
+    const page = await useCases.listTransactions.execute(authOf(req).userId, filter, { limit, after: cursor });
+    const nextCursor = page.nextCursor ? encodeTransactionCursor(page.nextCursor) : null;
+    res.json({ data: page.items.map(toTransactionDto), page: toPageDto(limit, nextCursor) });
   };
 
   const get: RequestHandler = async (req, res) => {
@@ -65,7 +72,13 @@ export function createTransactionController(useCases: TransactionUseCases) {
     res.status(204).end();
   };
 
-  return { list, create, update, remove, get };
+  const summary: RequestHandler = async (req, res) => {
+    const range = parseRequest(summaryQuerySchema, req.query);
+    const result = await useCases.getSummary.execute(authOf(req).userId, range);
+    res.json({ data: toSummaryDto(result) });
+  };
+
+  return { list, create, update, remove, get, summary };
 }
 
 export type TransactionController = ReturnType<typeof createTransactionController>;

@@ -1,7 +1,12 @@
-import type { Transaction } from "../domain/transaction.ts";
-import type { TransactionFilter, TransactionRepository } from "../domain/transaction-repository.ts";
+import { DEFAULT_PAGE_LIMIT, type PageRequest } from "../../../shared/domain/pagination.ts";
+import type {
+  TransactionCursor,
+  TransactionFilter,
+  TransactionPage,
+  TransactionRepository,
+} from "../domain/transaction-repository.ts";
 
-/** Use case: menampilkan daftar transaksi (dipakai menu Transaksi dan Dashboard di frontend). */
+/** Use case: menampilkan daftar transaksi per halaman (dipakai menu Transaksi dan Dashboard di frontend). */
 export class ListTransactions {
   readonly #repository: TransactionRepository;
 
@@ -9,7 +14,11 @@ export class ListTransactions {
     this.#repository = repository;
   }
 
-  execute(userId: string, filter: TransactionFilter = {}): Promise<Transaction[]> {
-    return this.#repository.list(userId, filter);
+  execute(
+    userId: string,
+    filter: TransactionFilter = {},
+    page: PageRequest<TransactionCursor> = { limit: DEFAULT_PAGE_LIMIT },
+  ): Promise<TransactionPage> {
+    return this.#repository.list(userId, filter, page);
   }
 }

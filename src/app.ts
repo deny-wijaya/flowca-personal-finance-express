@@ -5,7 +5,7 @@ import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import type { Container } from "./di/container.ts";
 import { createAuthRouter } from "./modules/auth/presentation/auth.routes.ts";
-import { createTransactionRouter } from "./modules/transaction/presentation/transaction.routes.ts";
+import { createSummaryRouter, createTransactionRouter } from "./modules/transaction/presentation/transaction.routes.ts";
 import type { Logger } from "./shared/logger/logger.ts";
 import { errorHandler } from "./shared/http/middlewares/error-handler.ts";
 import { createFailedAttemptLimit } from "./shared/http/middlewares/rate-limit.ts";
@@ -39,6 +39,7 @@ export function createRouterApp(container: Container): Router {
     message: "Terlalu banyak percobaan masuk. Coba lagi dalam 1 menit.",
   });
   router.use("/transactions", requireAuth, createTransactionRouter(container.transactionController));
+  router.use("/summary", requireAuth, createSummaryRouter(container.transactionController));
   router.use("/auth", createAuthRouter(container.authController, { requireAuth, loginLimit }));
   return router;
 }

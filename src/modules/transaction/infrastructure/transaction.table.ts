@@ -26,7 +26,8 @@ export const transactions = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  // Dashboard dan menu Transaksi selalu memfilter berdasarkan pemilik lalu rentang occurred_at,
-  // jadi index gabungan (user_id, occurred_at) dipakai untuk kedua kondisi sekaligus.
-  (table) => [index("transactions_user_id_occurred_at_idx").on(table.userId, table.occurredAt)],
+  // Dashboard dan menu Transaksi selalu memfilter berdasarkan pemilik, rentang occurred_at, lalu
+  // mengurutkan per halaman dengan (occurred_at, id). Index gabungan dengan urutan kolom yang sama
+  // membuat Postgres bisa langsung melompat ke posisi cursor tanpa membaca baris sebelumnya.
+  (table) => [index("transactions_user_id_occurred_at_id_idx").on(table.userId, table.occurredAt, table.id)],
 );

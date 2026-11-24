@@ -11,3 +11,10 @@ export function createTransactionRouter(controller: TransactionController): Rout
   router.delete("/:id", controller.remove);
   return router;
 }
+
+/** Endpoint ringkasan. Router ini dipasang di `${API_PREFIX}/summary` oleh app.ts. */
+export function createSummaryRouter(controller: TransactionController): Router {
+  const router = Router();
+  router.get("/", controller.summary);
+  return router;
+}

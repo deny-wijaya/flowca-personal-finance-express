@@ -1,8 +1,16 @@
 import { randomUUID } from "node:crypto";
-import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, gte, ilike, lte, or, sql } from "drizzle-orm";
 import type { Database } from "../../../shared/database/database.ts";
+import { toPage, type PageRequest } from "../../../shared/domain/pagination.ts";
 import type { NewTransaction, Transaction } from "../domain/transaction.ts";
-import type { TransactionFilter, TransactionRepository } from "../domain/transaction-repository.ts";
+import type {
+  DateRange,
+  TransactionCursor,
+  TransactionFilter,
+  TransactionPage,
+  TransactionRepository,
+  TransactionTotals,
+} from "../domain/transaction-repository.ts";
 import { transactions } from "./transaction.table.ts";
 
 /**
@@ -21,9 +29,14 @@ export class PostgresTransactionRepository implements TransactionRepository {
     this.#db = db;
   }
 
-  async list(userId: string, filter: TransactionFilter = {}): Promise<Transaction[]> {
-    // and() mengabaikan argumen undefined. Kalau semua filter kosong, Drizzle tidak menulis WHERE.
-    return this.#db
+  async list(userId: string, filter: TransactionFilter, page: PageRequest<TransactionCursor>): Promise<TransactionPage> {
+    const { after } = page;
+    // Cari dengan ILIKE '%kata%'. Karakter % dan _ punya arti khusus di LIKE, jadi di-escape dulu
+    // supaya pencarian "50%" mencari teks "50%" apa adanya.
+    const pattern = filter.q ? `%${filter.q.replace(/[\\%_]/g, "\\$&")}%` : undefined;
+
+    // and() mengabaikan argumen undefined. Kalau semua filter kosong, hanya user_id yang tersisa.
+    const rows = await this.#db
       .select()
       .from(transactions)
       .where(
@@ -32,11 +45,22 @@ export class PostgresTransactionRepository implements TransactionRepository {
           filter.from ? gte(transactions.occurredAt, filter.from) : undefined,
           filter.to ? lte(transactions.occurredAt, filter.to) : undefined,
           filter.type ? eq(transactions.type, filter.type) : undefined,
+          filter.category ? eq(transactions.category, filter.category) : undefined,
+          pattern ? or(ilike(transactions.note, pattern), ilike(transactions.category, pattern)) : undefined,
+          // Keyset pagination: ambil baris yang urutannya tepat sesudah transaksi terakhir di halaman
+          // sebelumnya. Perbandingan baris (a, b) < (x, y) artinya a < x, atau a = x dan b < y.
+          after
+            ? sql`(${transactions.occurredAt}, ${transactions.id}) < (${after.occurredAt.toISOString()}::timestamptz, ${after.id})`
+            : undefined,
         ),
       )
-      // Kolom kedua dan ketiga menentukan urutan transaksi yang terjadi di jam yang sama,
+      // Urutan harus sama persis dengan kondisi keyset di atas. id menjadi penentu kalau occurred_at sama,
       // karena Postgres tidak menjamin urutan baris yang nilainya sama.
-      .orderBy(desc(transactions.occurredAt), desc(transactions.createdAt), desc(transactions.id));
+      .orderBy(desc(transactions.occurredAt), desc(transactions.id))
+      // Ambil satu baris lebih untuk tahu apakah masih ada halaman berikutnya.
+      .limit(page.limit + 1);
+
+    return toPage(rows, page.limit, (trx) => ({ occurredAt: trx.occurredAt, id: trx.id }));
   }
 
   async findById(userId: string, id: string): Promise<Transaction | null> {
@@ -72,5 +96,42 @@ export class PostgresTransactionRepository implements TransactionRepository {
 
   async delete(userId: string, id: string): Promise<void> {
     await this.#db.delete(transactions).where(and(eq(transactions.id, id), eq(transactions.userId, userId)));
+  }
+
+  async summarize(userId: string, range: DateRange): Promise<TransactionTotals> {
+    const inRange = and(
+      eq(transactions.userId, userId),
+      gte(transactions.occurredAt, range.from),
+      lte(transactions.occurredAt, range.to),
+    );
+    // SUM dari kolom bigint menghasilkan tipe numeric, yang dikirim driver pg sebagai string.
+    // mapWith(Number) mengubahnya kembali menjadi number. coalesce mengganti NULL (tidak ada baris) dengan 0.
+    const expenseSum = sql<number>`sum(${transactions.amount})`.mapWith(Number);
+
+    const [totalsRows, categoryRows] = await Promise.all([
+      // Query 1: satu baris berisi total pemasukan, total pengeluaran, dan jumlah transaksi.
+      // FILTER (WHERE ...) membuat SUM hanya menjumlahkan baris dengan jenis tertentu.
+      this.#db
+        .select({
+          totalIncome: sql<number>`coalesce(sum(${transactions.amount}) filter (where ${transactions.type} = 'income'), 0)`.mapWith(Number),
+          totalExpense: sql<number>`coalesce(sum(${transactions.amount}) filter (where ${transactions.type} = 'expense'), 0)`.mapWith(Number),
+          transactionCount: count(),
+          // count(*) FILTER (WHERE ...) menghitung baris dengan jenis tertentu saja. Hasilnya bigint, jadi diubah ke number.
+          incomeCount: sql<number>`count(*) filter (where ${transactions.type} = 'income')`.mapWith(Number),
+          expenseCount: sql<number>`count(*) filter (where ${transactions.type} = 'expense')`.mapWith(Number),
+        })
+        .from(transactions)
+        .where(inRange),
+      // Query 2: satu baris per kategori pengeluaran (GROUP BY), urut dari nominal terbesar.
+      this.#db
+        .select({ category: transactions.category, amount: expenseSum })
+        .from(transactions)
+        .where(and(inRange, eq(transactions.type, "expense")))
+        .groupBy(transactions.category)
+        .orderBy(desc(expenseSum), asc(transactions.category)),
+    ]);
+
+    const totals = totalsRows[0] ?? { totalIncome: 0, totalExpense: 0, transactionCount: 0, incomeCount: 0, expenseCount: 0 };
+    return { ...totals, expenseByCategory: categoryRows };
   }
 }

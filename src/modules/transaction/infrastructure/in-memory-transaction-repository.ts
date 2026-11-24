@@ -1,6 +1,14 @@
 import { randomUUID } from "node:crypto";
+import { toPage, type PageRequest } from "../../../shared/domain/pagination.ts";
 import type { NewTransaction, Transaction } from "../domain/transaction.ts";
-import type { TransactionFilter, TransactionRepository } from "../domain/transaction-repository.ts";
+import type {
+  DateRange,
+  TransactionCursor,
+  TransactionFilter,
+  TransactionPage,
+  TransactionRepository,
+  TransactionTotals,
+} from "../domain/transaction-repository.ts";
 
 /**
  * Implementasi repository yang menyimpan data di memori proses. Dipakai oleh test supaya tidak butuh Docker.
@@ -13,17 +21,13 @@ export class InMemoryTransactionRepository implements TransactionRepository {
     for (const row of seed) this.#rows.set(row.id, row);
   }
 
-  async list(userId: string, filter: TransactionFilter = {}): Promise<Transaction[]> {
-    return [...this.#rows.values()]
-      .filter((trx) => {
-        if (trx.userId !== userId) return false;
-        const time = trx.occurredAt.getTime();
-        if (filter.from && time < filter.from.getTime()) return false;
-        if (filter.to && time > filter.to.getTime()) return false;
-        if (filter.type && trx.type !== filter.type) return false;
-        return true;
-      })
-      .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime());
+  async list(userId: string, filter: TransactionFilter, page: PageRequest<TransactionCursor>): Promise<TransactionPage> {
+    const after = page.after;
+    const rows = this.#matching(userId, filter)
+      .sort(newestFirst)
+      // Sama dengan kondisi keyset di Postgres: hanya transaksi yang urutannya sesudah cursor.
+      .filter((trx) => !after || newestFirst(trx, { ...after }) > 0);
+    return toPage(rows.slice(0, page.limit + 1), page.limit, (trx) => ({ occurredAt: trx.occurredAt, id: trx.id }));
   }
 
   async findById(userId: string, id: string): Promise<Transaction | null> {
@@ -49,6 +53,48 @@ export class InMemoryTransactionRepository implements TransactionRepository {
   async delete(userId: string, id: string): Promise<void> {
     if (await this.findById(userId, id)) this.#rows.delete(id);
   }
+
+  async summarize(userId: string, range: DateRange): Promise<TransactionTotals> {
+    const rows = this.#matching(userId, range);
+    const expenseMap = new Map<string, number>();
+    let totalIncome = 0;
+    let totalExpense = 0;
+    for (const trx of rows) {
+      if (trx.type === "income") {
+        totalIncome += trx.amount;
+      } else {
+        totalExpense += trx.amount;
+        expenseMap.set(trx.category, (expenseMap.get(trx.category) ?? 0) + trx.amount);
+      }
+    }
+    // Urutan sama dengan query Postgres: nominal terbesar dulu, lalu nama kategori A-Z kalau nominalnya sama.
+    const expenseByCategory = [...expenseMap]
+      .map(([category, amount]) => ({ category, amount }))
+      .sort((a, b) => b.amount - a.amount || a.category.localeCompare(b.category));
+    const incomeCount = rows.filter((trx) => trx.type === "income").length;
+    return { totalIncome, totalExpense, transactionCount: rows.length, incomeCount, expenseCount: rows.length - incomeCount, expenseByCategory };
+  }
+
+  #matching(userId: string, filter: TransactionFilter): Transaction[] {
+    const q = filter.q?.toLowerCase();
+    return [...this.#rows.values()].filter((trx) => {
+      if (trx.userId !== userId) return false;
+      const time = trx.occurredAt.getTime();
+      if (filter.from && time < filter.from.getTime()) return false;
+      if (filter.to && time > filter.to.getTime()) return false;
+      if (filter.type && trx.type !== filter.type) return false;
+      if (filter.category && trx.category !== filter.category) return false;
+      if (q && !`${trx.note ?? ""} ${trx.category}`.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+}
+
+/** Pembanding untuk sort: occurredAt terbaru dulu, lalu id terbesar. Hasil > 0 berarti `a` ditaruh sesudah `b`. */
+function newestFirst(a: Pick<Transaction, "occurredAt" | "id">, b: Pick<Transaction, "occurredAt" | "id">): number {
+  const byTime = b.occurredAt.getTime() - a.occurredAt.getTime();
+  if (byTime !== 0) return byTime;
+  return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 }
 
 /**
