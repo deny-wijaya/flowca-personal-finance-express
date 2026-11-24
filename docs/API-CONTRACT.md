@@ -62,6 +62,7 @@ Kita memakai cursor, bukan offset (`page=2`), karena data transaksi terus bertam
 | 404 | `NOT_FOUND` | Data dengan id tersebut tidak ada |
 | 404 | `ROUTE_NOT_FOUND` | Endpoint tidak ada |
 | 409 | `EMAIL_ALREADY_REGISTERED` | Register dengan email yang sudah dipakai akun lain (Fase 2) |
+| 409 | `ACCOUNT_ALREADY_EXISTS` | Membuat akun dengan nama yang sudah dipakai akun lain milik pengguna yang sama (lihat 4.8) |
 | 409 | `CATEGORY_ALREADY_EXISTS` | Membuat kategori dengan nama yang sudah ada untuk jenis yang sama (lihat 4.6) |
 | 413 | `PAYLOAD_TOO_LARGE` | Body lebih dari 100 KB |
 | 422 | `DOMAIN_ERROR` | Aturan bisnis lain yang bukan validasi field |
@@ -73,12 +74,14 @@ Kita memakai cursor, bukan offset (`page=2`), karena data transaksi terus bertam
 | Method | Path | Login | Query / Body | Response `data` |
 |---|---|---|---|---|
 | `GET` | `/health` (tanpa prefix) | Tidak | - | `{ status, uptime_seconds }` |
-| `GET` | `/transactions` | Wajib | `from`, `to`, `type`, `category_id`, `q`, `limit`, `cursor`, semua opsional (lihat 4.4) | `TransactionDto[]` dengan `page` |
+| `GET` | `/transactions` | Wajib | `from`, `to`, `type`, `category_id`, `account_id`, `q`, `limit`, `cursor`, semua opsional (lihat 4.4) | `TransactionDto[]` dengan `page` |
 | `GET` | `/summary` | Wajib | `from`, `to` wajib (lihat 4.5) | `SummaryDto` |
 | `GET` | `/transactions/:id` | Wajib | - | `TransactionDto` |
-| `POST` | `/transactions` | Wajib | `{ type, amount, category_id, note?, occurred_at }` (lihat 4.7) | `TransactionDto`, status `201` |
+| `POST` | `/transactions` | Wajib | `{ type, amount, category_id, account_id, note?, occurred_at }` (lihat 4.7 dan 4.9) | `TransactionDto`, status `201` |
 | `PATCH` | `/transactions/:id` | Wajib | Minimal satu field dari body `POST` | `TransactionDto` |
 | `DELETE` | `/transactions/:id` | Wajib | - | Kosong, status `204` |
+| `GET` | `/accounts` | Wajib | `limit`, `cursor`, semua opsional (lihat 4.8) | `AccountDto[]` dengan `page` |
+| `POST` | `/accounts` | Wajib | `{ name, kind, opening_balance }` (lihat 4.8) | `AccountDto`, status `201` |
 | `GET` | `/categories` | Wajib | `type`, `limit`, `cursor`, semua opsional (lihat 4.6) | `CategoryDto[]` dengan `page` |
 | `POST` | `/categories` | Wajib | `{ name, type }` (lihat 4.6) | `CategoryDto`, status `201` |
 | `POST` | `/auth/register` | Tidak | `{ name, email, password }` | `UserDto`, status `201` (lihat 4.1) |
@@ -106,12 +109,16 @@ Frontend sebaiknya menghapus token yang tersimpan dan mengarahkan pengguna ke la
   "amount": 64000,
   "category_id": "cat_expense_transportasi",
   "category": "Transportasi",
+  "account_id": "acc_5d0f7c2e-8a41-4b6e-9c3d-2f1e0a9b8c7d",
+  "account": "BCA",
   "note": "Gojek ke kantor",
   "occurred_at": "2026-11-06T02:00:00.000Z",
   "created_at": "2026-11-06T02:00:00.000Z",
   "updated_at": "2026-11-06T02:00:00.000Z"
 }
 ```
+
+`account_id` dan `account` (nama akun) bernilai `null` untuk transaksi lama yang dicatat sebelum fitur akun ada. Frontend menampilkannya sebagai "Tanpa akun".
 
 `category_id` adalah id kategori yang disimpan di transaksi. `category` adalah nama kategori itu saat response dibuat, supaya frontend bisa langsung menampilkannya tanpa request tambahan ke `GET /categories`.
 
@@ -275,6 +282,7 @@ Dipanggil saat pengguna membuka menu **Transaksi** (daftar transaksi bulan yang 
 | `from`, `to` | ISO 8601 dengan offset. Batas waktu `occurred_at`, keduanya inklusif |
 | `type` | `income` atau `expense` |
 | `category_id` | Id kategori, misalnya `cat_expense_transportasi` |
+| `account_id` | Id akun, misalnya `acc_5d0f7c2e-8a41-4b6e-9c3d-2f1e0a9b8c7d` |
 | `q` | Kata pencarian, 1-100 karakter setelah di-trim. Mencari di `note` dan nama kategori tanpa membedakan huruf besar dan kecil. `q=gojek` cocok dengan catatan "Gojek ke kantor" |
 | `limit`, `cursor` | Lihat aturan pagination di bagian 1 |
 
@@ -291,6 +299,8 @@ Urutannya selalu dari `occurred_at` terbaru. Kalau dua transaksi punya `occurred
       "amount": 64000,
       "category_id": "cat_expense_transportasi",
       "category": "Transportasi",
+      "account_id": "acc_5d0f7c2e-8a41-4b6e-9c3d-2f1e0a9b8c7d",
+      "account": "BCA",
       "note": "Gojek ke kantor",
       "occurred_at": "2026-11-06T02:00:00.000Z",
       "created_at": "2026-11-06T02:00:00.000Z",
@@ -427,3 +437,66 @@ Body transaksi menyimpan kategori lewat `category_id`, bukan nama kategori. Cont
 - Jenis kategori tidak cocok dengan jenis transaksi, misalnya `cat_income_gaji` untuk pengeluaran: "Kategori Gaji tidak bisa dipakai untuk pengeluaran".
 
 Pada `PATCH`, aturan ini dicek terhadap gabungan data lama dan perubahan. Mengubah `type` menjadi `income` tanpa mengganti `category_id` pengeluaran akan ditolak.
+
+### 4.8 Akun (`GET /accounts` dan `POST /accounts`)
+
+Akun adalah tempat uang disimpan, misalnya Tunai, BCA, atau GoPay. Setiap akun milik satu pengguna dan hanya terlihat oleh pemiliknya. Mengubah dan menghapus akun belum tersedia.
+
+### `AccountDto`
+
+```json
+{
+  "id": "acc_5d0f7c2e-8a41-4b6e-9c3d-2f1e0a9b8c7d",
+  "name": "BCA",
+  "kind": "bank",
+  "opening_balance": 2000000,
+  "balance": 13000000,
+  "created_at": "2026-11-24T03:00:00.000Z"
+}
+```
+
+| Field | Arti |
+|---|---|
+| `kind` | `cash` (tunai), `bank` (rekening bank), `ewallet` (dompet digital), atau `credit` (kartu kredit) |
+| `opening_balance` | Saldo saat akun mulai dicatat di aplikasi, diisi pengguna saat membuat akun. Tidak berubah oleh transaksi |
+| `balance` | Saldo saat ini, dihitung ulang setiap request: `opening_balance` + semua pemasukan − semua pengeluaran di akun itu, tanpa batas tanggal. Tidak disimpan di database, supaya selalu cocok dengan daftar transaksi |
+
+Kedua saldo boleh negatif, misalnya tagihan kartu kredit.
+
+**`GET /accounts`**
+
+Dipanggil saat pengguna membuka menu **Dashboard** (kartu Total saldo), menu **Akun** (daftar akun), form **Tambah transaksi** (pilihan Akun), dan menu **Transaksi** (kolom dan filter Akun). Mengembalikan akun milik pemilik token, urut dari yang paling lama dibuat, dengan standar pagination di bagian 1. Frontend memakai `limit=100` dan mengikuti `next_cursor` kalau ada.
+
+**`POST /accounts`**
+
+Dipanggil dari form tambah akun di menu **Akun**, dan dari langkah terakhir onboarding ("Uangmu ada di mana?") untuk setiap akun yang dipilih. Pada onboarding, isian "Total uang saat ini" dipakai sebagai `opening_balance` akun pertama yang dipilih, dan akun lainnya dibuat dengan `opening_balance` 0.
+
+```json
+{ "name": "BCA", "kind": "bank", "opening_balance": 2000000 }
+```
+
+| Field | Aturan |
+|---|---|
+| `name` | Wajib, 1-40 karakter setelah di-trim. Spasi berlebih di tengah dirapikan menjadi satu spasi |
+| `kind` | Wajib, salah satu dari `cash`, `bank`, `ewallet`, `credit` |
+| `opening_balance` | Wajib, bilangan bulat Rupiah, boleh 0 atau negatif, nilai mutlaknya maksimal Rp 1.000.000.000.000 |
+
+Sukses dibalas `201` dengan `AccountDto` (saat baru dibuat, `balance` sama dengan `opening_balance`). Nama akun harus unik per pengguna tanpa membedakan huruf besar dan kecil. Nama yang sudah dipakai dibalas `409`:
+
+```json
+{
+  "error": {
+    "code": "ACCOUNT_ALREADY_EXISTS",
+    "message": "Akun BCA sudah ada",
+    "details": { "fieldErrors": { "name": ["Akun BCA sudah ada"] } }
+  }
+}
+```
+
+### 4.9 Akun di transaksi (`POST` dan `PATCH /transactions`)
+
+`account_id` wajib dikirim di body `POST /transactions` dan boleh diubah lewat `PATCH`. Pemasukan menambah saldo akun itu, dan pengeluaran mengurangi saldonya.
+
+Akun yang tidak ada atau milik pengguna lain ditolak dengan `400 VALIDATION_ERROR` di `details.fieldErrors.account_id` dengan pesan "Akun tidak ditemukan". Pesannya sama untuk kedua kasus, supaya keberadaan akun pengguna lain tidak bocor.
+
+Transaksi lama yang belum punya akun tetap bisa dibaca. Kalau transaksi lama itu diubah lewat `PATCH` tanpa mengirim `account_id`, akunnya tetap kosong.

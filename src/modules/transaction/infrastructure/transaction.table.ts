@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import { bigint, index, pgEnum, pgTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/pg-core";
+import { ACCOUNT_KINDS, MAX_ACCOUNT_NAME_LENGTH } from "../domain/account.ts";
 import { MAX_CATEGORY_NAME_LENGTH } from "../domain/category.ts";
 import { MAX_NOTE_LENGTH, TRANSACTION_TYPES } from "../domain/transaction.ts";
 
@@ -9,6 +10,31 @@ import { MAX_NOTE_LENGTH, TRANSACTION_TYPES } from "../domain/transaction.ts";
  * dan tipe hasil query. Kiri = nama properti di TypeScript, argumen pertama = nama kolom di database.
  */
 export const transactionType = pgEnum("transaction_type", TRANSACTION_TYPES);
+
+export const accountKind = pgEnum("account_kind", ACCOUNT_KINDS);
+
+/**
+ * Akun (dompet) milik satu user. Saldo saat ini tidak disimpan: dihitung dari opening_balance dan
+ * transaksi di akun itu (lihat PostgresAccountRepository.list).
+ * Foreign key user_id ke users.id (ON DELETE CASCADE) ditulis langsung di migration 0006,
+ * karena aturan arsitektur melarang file ini meng-import tabel users dari modul auth.
+ */
+export const accounts = pgTable(
+  "accounts",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    name: varchar("name", { length: MAX_ACCOUNT_NAME_LENGTH }).notNull(),
+    kind: accountKind("kind").notNull(),
+    // Boleh negatif (utang kartu kredit). mode "number" sama seperti amount di transactions.
+    openingBalance: bigint("opening_balance", { mode: "number" }).notNull(),
+    // precision 3 (milidetik), sama dengan Date di JavaScript. created_at dipakai di cursor pagination;
+    // dengan presisi bawaan (mikrodetik), cursor yang terpotong ke milidetik membuat akun muncul dua kali.
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
+  },
+  // Nama akun unik per user tanpa membedakan huruf besar kecil ("BCA" sama dengan "bca").
+  (table) => [uniqueIndex("accounts_user_id_name_idx").on(table.userId, sql`lower(${table.name})`)],
+);
 
 /**
  * Kategori bawaan (user_id NULL, diisi oleh migration 0004) dan kategori kustom milik satu user.
@@ -24,7 +50,8 @@ export const categories = pgTable(
     userId: text("user_id"),
     name: varchar("name", { length: MAX_CATEGORY_NAME_LENGTH }).notNull(),
     type: transactionType("type").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    // precision 3 (milidetik) karena dipakai di cursor pagination, sama seperti accounts.created_at.
+    createdAt: timestamp("created_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
   },
   // Satu user tidak boleh punya dua kategori kustom dengan nama sama (tanpa beda huruf besar kecil)
   // untuk jenis yang sama. Index ini menjaga aturan itu walaupun dua request datang bersamaan.
@@ -49,6 +76,9 @@ export const transactions = pgTable(
     categoryId: text("category_id")
       .notNull()
       .references(() => categories.id),
+    // Boleh kosong untuk transaksi lama yang dicatat sebelum fitur akun ada. Transaksi baru wajib
+    // punya akun, dan aturan itu dicek di use case CreateTransaction. ON DELETE NO ACTION seperti kategori.
+    accountId: text("account_id").references(() => accounts.id),
     note: varchar("note", { length: MAX_NOTE_LENGTH }),
     occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -57,5 +87,9 @@ export const transactions = pgTable(
   // Dashboard dan menu Transaksi selalu memfilter berdasarkan pemilik, rentang occurred_at, lalu
   // mengurutkan per halaman dengan (occurred_at, id). Index gabungan dengan urutan kolom yang sama
   // membuat Postgres bisa langsung melompat ke posisi cursor tanpa membaca baris sebelumnya.
-  (table) => [index("transactions_user_id_occurred_at_id_idx").on(table.userId, table.occurredAt, table.id)],
+  // Index kedua dipakai saat menghitung saldo akun (SUM transaksi per account_id).
+  (table) => [
+    index("transactions_user_id_occurred_at_id_idx").on(table.userId, table.occurredAt, table.id),
+    index("transactions_account_id_idx").on(table.accountId),
+  ],
 );

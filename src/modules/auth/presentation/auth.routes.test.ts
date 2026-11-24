@@ -3,6 +3,7 @@ import request from "supertest";
 import { beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../../app.ts";
 import { createContainer } from "../../../di/container.ts";
+import { InMemoryAccountRepository } from "../../transaction/infrastructure/in-memory-account-repository.ts";
 import { InMemoryCategoryRepository } from "../../transaction/infrastructure/in-memory-category-repository.ts";
 import { InMemoryTransactionRepository } from "../../transaction/infrastructure/in-memory-transaction-repository.ts";
 import { InMemoryUserRepository } from "../infrastructure/in-memory-user-repository.ts";
@@ -15,6 +16,7 @@ function buildApp() {
   const container = createContainer({
     transactionRepository: new InMemoryTransactionRepository(),
     categoryRepository: new InMemoryCategoryRepository(),
+    accountRepository: new InMemoryAccountRepository(),
     userRepository: new InMemoryUserRepository(),
     jwtSecret: "kunci-rahasia-test-yang-panjangnya-lebih-dari-32-karakter",
   });
@@ -198,6 +200,7 @@ describe("X-Forwarded-For dari alamat yang tidak dipercaya", () => {
     const container = createContainer({
       transactionRepository: new InMemoryTransactionRepository(),
       categoryRepository: new InMemoryCategoryRepository(),
+      accountRepository: new InMemoryAccountRepository(),
       userRepository: new InMemoryUserRepository(),
       jwtSecret: "kunci-rahasia-test-yang-panjangnya-lebih-dari-32-karakter",
     });

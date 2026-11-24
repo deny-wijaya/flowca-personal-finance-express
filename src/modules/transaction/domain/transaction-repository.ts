@@ -7,6 +7,8 @@ export type TransactionFilter = {
   type?: TransactionType;
   /** Id kategori, misalnya "cat_expense_transportasi". */
   categoryId?: string;
+  /** Id akun. */
+  accountId?: string;
   /** Kata pencarian di catatan dan nama kategori, tanpa membedakan huruf besar dan kecil. */
   q?: string;
 };

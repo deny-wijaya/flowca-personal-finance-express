@@ -102,7 +102,9 @@ Status: Selesai (Fase 2). Register, login, middleware auth dan `GET /auth/me`, t
 
 ### Epic D: Fase 2 produk (P2)
 
-Anggaran per kategori, dompet, dan export CSV mengikuti Epic D di PRD frontend. Endpoint-nya dirancang setelah Fase 3 selesai.
+- **D2. Akun (dompet).** Tabel `accounts` dengan saldo awal, transaksi menyimpan `account_id`, dan saldo saat ini dihitung database. Dipakai kartu Total saldo di Dashboard, menu Akun, pilihan Akun di form Tambah transaksi, dan onboarding. Kontraknya ada di `API-CONTRACT.md` bagian 4.8 dan 4.9. Status: Belum.
+
+Anggaran per kategori dan export CSV mengikuti Epic D di PRD frontend. Endpoint-nya dirancang setelah Fase 3 selesai.
 
 ---
 
