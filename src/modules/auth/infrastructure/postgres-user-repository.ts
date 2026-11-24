@@ -4,9 +4,7 @@ import type { Database } from "../../../shared/database/database.ts";
 import type { UserRepository } from "../domain/user-repository.ts";
 import { EmailAlreadyRegisteredError, type NewUser, type User } from "../domain/user.ts";
 import { users } from "./user.table.ts";
-
-/** Kode error Postgres untuk pelanggaran unique constraint. */
-const UNIQUE_VIOLATION = "23505";
+import { isUniqueViolation } from "../../../shared/database/errors.ts";
 
 export class PostgresUserRepository implements UserRepository {
   readonly #db: Database;
@@ -40,12 +38,4 @@ export class PostgresUserRepository implements UserRepository {
       throw error;
     }
   }
-}
-
-/** Drizzle membungkus error dari driver pg, jadi kode aslinya bisa ada di `error.cause`. */
-function isUniqueViolation(error: unknown): boolean {
-  const codeOf = (value: unknown) =>
-    typeof value === "object" && value !== null && "code" in value ? value.code : undefined;
-  const cause = typeof error === "object" && error !== null && "cause" in error ? error.cause : undefined;
-  return codeOf(error) === UNIQUE_VIOLATION || codeOf(cause) === UNIQUE_VIOLATION;
 }

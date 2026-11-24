@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { NotFoundError, ValidationError } from "../../../shared/domain/errors.ts";
+import { InMemoryCategoryRepository } from "../infrastructure/in-memory-category-repository.ts";
 import { InMemoryTransactionRepository } from "../infrastructure/in-memory-transaction-repository.ts";
+import { CreateCategory } from "./create-category.ts";
+import { ListCategories } from "./list-categories.ts";
 import type { Clock } from "./clock.ts";
 import { CreateTransaction } from "./create-transaction.ts";
 import { DeleteTransaction } from "./delete-transaction.ts";
@@ -14,18 +17,22 @@ const RANI = "usr_rani";
 const BUDI = "usr_budi";
 
 describe("transaction use cases", () => {
+  let categories: InMemoryCategoryRepository;
   let repository: InMemoryTransactionRepository;
   let create: CreateTransaction;
+  let update: UpdateTransaction;
 
   beforeEach(() => {
-    repository = new InMemoryTransactionRepository();
-    create = new CreateTransaction(repository, fixedClock);
+    categories = new InMemoryCategoryRepository();
+    repository = new InMemoryTransactionRepository([], categories);
+    create = new CreateTransaction(repository, categories, fixedClock);
+    update = new UpdateTransaction(repository, categories, fixedClock);
   });
 
   const makanSiang = {
     type: "expense" as const,
     amount: 85_000,
-    category: "Makan & Minum",
+    categoryId: "cat_expense_makanan",
     note: "Makan siang tim",
     occurredAt: new Date("2026-11-06T12:00:00+07:00"),
   };
@@ -35,6 +42,21 @@ describe("transaction use cases", () => {
     expect(created.id).toMatch(/^trx_/);
     expect(await repository.findById(RANI, created.id)).toEqual(created);
     expect(created.userId).toBe(RANI);
+    expect(created.category).toBe("Makanan");
+  });
+
+  it("CreateTransaction menolak kategori yang tidak ada dan kategori yang jenisnya tidak cocok", async () => {
+    await expect(create.execute(RANI, { ...makanSiang, categoryId: "cat_tidak_ada" })).rejects.toThrow("Kategori tidak ditemukan");
+    await expect(create.execute(RANI, { ...makanSiang, categoryId: "cat_income_gaji" })).rejects.toThrow(
+      "Kategori Gaji tidak bisa dipakai untuk pengeluaran",
+    );
+  });
+
+  it("CreateTransaction menerima kategori kustom milik sendiri, tapi menolak milik user lain", async () => {
+    const kos = await new CreateCategory(categories).execute(BUDI, { name: "Kos", type: "expense" });
+    await expect(create.execute(RANI, { ...makanSiang, categoryId: kos.id })).rejects.toThrow("Kategori tidak ditemukan");
+    const created = await create.execute(BUDI, { ...makanSiang, categoryId: kos.id });
+    expect(created.category).toBe("Kos");
   });
 
   it("CreateTransaction menolak transaksi bertanggal besok", async () => {
@@ -46,7 +68,7 @@ describe("transaction use cases", () => {
   it("ListTransactions mengurutkan dari tanggal terbaru dan memfilter type", async () => {
     await create.execute(RANI, { ...makanSiang, occurredAt: new Date("2026-11-02T09:00:00+07:00") });
     await create.execute(RANI, { ...makanSiang, occurredAt: new Date("2026-11-09T09:00:00+07:00") });
-    await create.execute(RANI, { type: "income", amount: 12_500_000, category: "Gaji", note: null, occurredAt: new Date("2026-11-01T09:00:00+07:00") });
+    await create.execute(RANI, { type: "income", amount: 12_500_000, categoryId: "cat_income_gaji", note: null, occurredAt: new Date("2026-11-01T09:00:00+07:00") });
 
     const expenses = await new ListTransactions(repository).execute(RANI, { type: "expense" });
     expect(expenses.items.map((t) => t.occurredAt.getDate())).toEqual([9, 2]);
@@ -73,15 +95,16 @@ describe("transaction use cases", () => {
 
   it("UpdateTransaction menolak ganti type tanpa ganti kategori", async () => {
     const created = await create.execute(RANI, makanSiang);
-    const update = new UpdateTransaction(repository, fixedClock);
     await expect(update.execute(RANI, created.id, { type: "income" })).rejects.toThrow(ValidationError);
+    const moved = await update.execute(RANI, created.id, { type: "income", categoryId: "cat_income_bonus" });
+    expect(moved.category).toBe("Bonus");
   });
 
   it("UpdateTransaction mengubah nominal", async () => {
     const created = await create.execute(RANI, makanSiang);
-    const updated = await new UpdateTransaction(repository, fixedClock).execute(RANI, created.id, { amount: 90_000 });
+    const updated = await update.execute(RANI, created.id, { amount: 90_000 });
     expect(updated.amount).toBe(90_000);
-    expect(updated.category).toBe("Makan & Minum");
+    expect(updated.category).toBe("Makanan");
   });
 
   it("DeleteTransaction melempar NotFoundError untuk id yang tidak ada", async () => {
@@ -99,7 +122,7 @@ describe("transaction use cases", () => {
 
       await expect(new GetTransaction(repository).execute(RANI, milikBudi.id)).rejects.toThrow(NotFoundError);
       await expect(
-        new UpdateTransaction(repository, fixedClock).execute(RANI, milikBudi.id, { amount: 1 }),
+        update.execute(RANI, milikBudi.id, { amount: 1 }),
       ).rejects.toThrow(NotFoundError);
       await expect(new DeleteTransaction(repository).execute(RANI, milikBudi.id)).rejects.toThrow(NotFoundError);
 
@@ -110,8 +133,8 @@ describe("transaction use cases", () => {
 
   describe("GetSummary", () => {
     const november = { from: new Date("2026-11-01T00:00:00+07:00"), to: new Date("2026-11-30T23:59:59.999+07:00") };
-    const gaji = { type: "income" as const, amount: 12_500_000, category: "Gaji", note: null, occurredAt: new Date("2026-11-01T09:00:00+07:00") };
-    const kos = { type: "expense" as const, amount: 1_850_000, category: "Tagihan", note: "Cicilan kos", occurredAt: new Date("2026-11-02T09:00:00+07:00") };
+    const gaji = { type: "income" as const, amount: 12_500_000, categoryId: "cat_income_gaji", note: null, occurredAt: new Date("2026-11-01T09:00:00+07:00") };
+    const kos = { type: "expense" as const, amount: 1_850_000, categoryId: "cat_expense_tagihan", note: "Cicilan kos", occurredAt: new Date("2026-11-02T09:00:00+07:00") };
 
     it("menjumlahkan pemasukan, pengeluaran, arus kas, dan pengeluaran per kategori", async () => {
       await create.execute(RANI, gaji);
@@ -129,8 +152,8 @@ describe("transaction use cases", () => {
         incomeCount: 1,
         expenseCount: 3,
         expenseByCategory: [
-          { category: "Tagihan", amount: 1_850_000 },
-          { category: "Makan & Minum", amount: 100_000 },
+          { categoryId: "cat_expense_tagihan", category: "Tagihan", amount: 1_850_000 },
+          { categoryId: "cat_expense_makanan", category: "Makanan", amount: 100_000 },
         ],
       });
     });
@@ -148,6 +171,42 @@ describe("transaction use cases", () => {
       await create.execute(RANI, kos);
       const summary = await new GetSummary(repository).execute(RANI, november);
       expect(summary.netCashflow).toBe(-1_850_000);
+    });
+  });
+
+  describe("kategori", () => {
+    it("ListCategories mengembalikan 14 kategori bawaan berurutan, lalu kategori kustom milik sendiri", async () => {
+      await new CreateCategory(categories).execute(RANI, { name: "Kos", type: "expense" });
+      await new CreateCategory(categories).execute(BUDI, { name: "Hewan peliharaan", type: "expense" });
+
+      const all = await new ListCategories(categories).execute(RANI, {}, { limit: 100 });
+      expect(all.items).toHaveLength(15);
+      expect(all.items[0]?.name).toBe("Makanan");
+      expect(all.items.at(-1)?.name).toBe("Kos");
+
+      const income = await new ListCategories(categories).execute(RANI, { type: "income" }, { limit: 100 });
+      expect(income.items.map((c) => c.name)).toEqual(["Gaji", "Freelance", "Bonus", "Hadiah", "Investasi", "Lainnya"]);
+    });
+
+    it("ListCategories membagi per halaman dengan cursor", async () => {
+      const list = new ListCategories(categories);
+      const first = await list.execute(RANI, {}, { limit: 10 });
+      const second = await list.execute(RANI, {}, { limit: 10, after: first.nextCursor! });
+      expect(first.items).toHaveLength(10);
+      expect(second.items).toHaveLength(4);
+      expect(second.nextCursor).toBeNull();
+    });
+
+    it("CreateCategory merapikan nama dan menolak nama yang sudah ada untuk jenis yang sama", async () => {
+      const createCategory = new CreateCategory(categories);
+      const kos = await createCategory.execute(RANI, { name: "  Bayar   kos ", type: "expense" });
+      expect(kos).toMatchObject({ name: "Bayar kos", type: "expense", userId: RANI });
+
+      await expect(createCategory.execute(RANI, { name: "BAYAR KOS", type: "expense" })).rejects.toThrow("Kategori BAYAR KOS sudah ada");
+      await expect(createCategory.execute(RANI, { name: "makanan", type: "expense" })).rejects.toThrow("Kategori makanan sudah ada");
+      // Jenis lain atau user lain boleh memakai nama yang sama.
+      await expect(createCategory.execute(RANI, { name: "Bayar kos", type: "income" })).resolves.toMatchObject({ type: "income" });
+      await expect(createCategory.execute(BUDI, { name: "Bayar kos", type: "expense" })).resolves.toMatchObject({ userId: BUDI });
     });
   });
 });

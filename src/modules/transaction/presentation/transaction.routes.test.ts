@@ -5,6 +5,7 @@ import { createApp } from "../../../app.ts";
 import { createContainer } from "../../../di/container.ts";
 import { InMemoryUserRepository } from "../../auth/infrastructure/in-memory-user-repository.ts";
 import { JoseTokenIssuer } from "../../auth/infrastructure/jose-token-issuer.ts";
+import { InMemoryCategoryRepository } from "../infrastructure/in-memory-category-repository.ts";
 import { InMemoryTransactionRepository } from "../infrastructure/in-memory-transaction-repository.ts";
 
 /**
@@ -16,8 +17,10 @@ import { InMemoryTransactionRepository } from "../infrastructure/in-memory-trans
 const JWT_SECRET = "kunci-rahasia-test-yang-panjangnya-lebih-dari-32-karakter";
 
 function buildApp() {
+  const categoryRepository = new InMemoryCategoryRepository();
   const container = createContainer({
-    transactionRepository: new InMemoryTransactionRepository(),
+    transactionRepository: new InMemoryTransactionRepository([], categoryRepository),
+    categoryRepository,
     userRepository: new InMemoryUserRepository(),
     jwtSecret: JWT_SECRET,
     clock: { now: () => new Date("2026-11-14T10:00:00+07:00") },
@@ -29,7 +32,7 @@ const gojek = {
   id: "seed-1",
   type: "expense",
   amount: 64_000,
-  category: "Transportasi",
+  category_id: "cat_expense_transportasi",
   note: "Gojek ke kantor",
   occurred_at: "2026-11-06T09:00:00+07:00",
 };
@@ -97,8 +100,8 @@ describe("/api/v1/transactions", () => {
   });
 
   it("POST dengan kategori yang salah membalas 400 dari aturan domain", async () => {
-    const res = await api.post("/api/v1/transactions").send({ ...gojek, category: "Gaji" }).expect(400);
-    expect(res.body.error.details.fieldErrors).toHaveProperty("category");
+    const res = await api.post("/api/v1/transactions").send({ ...gojek, category_id: "cat_income_gaji" }).expect(400);
+    expect(res.body.error.details.fieldErrors.category_id).toEqual(["Kategori Gaji tidak bisa dipakai untuk pengeluaran"]);
   });
 
   it("POST dengan JSON rusak membalas 400 INVALID_JSON", async () => {
@@ -166,17 +169,17 @@ describe("/api/v1/transactions", () => {
       }
     });
 
-    it("q mencari di catatan dan kategori tanpa membedakan huruf besar kecil, category mencocokkan persis", async () => {
+    it("q mencari di catatan dan kategori tanpa membedakan huruf besar kecil, category_id mencocokkan persis", async () => {
       await seed(2);
       await api
         .post("/api/v1/transactions")
-        .send({ type: "income", amount: 12_500_000, category: "Gaji", note: "Gaji bulanan", occurred_at: "2026-11-01T09:00:00+07:00" })
+        .send({ type: "income", amount: 12_500_000, category_id: "cat_income_gaji", note: "Gaji bulanan", occurred_at: "2026-11-01T09:00:00+07:00" })
         .expect(201);
 
       const byQ = await api.get("/api/v1/transactions").query({ q: "GOJEK KE-2" }).expect(200);
       expect(byQ.body.data.map((t: { note: string }) => t.note)).toEqual(["Gojek ke-2"]);
 
-      const byCategory = await api.get("/api/v1/transactions").query({ category: "Gaji" }).expect(200);
+      const byCategory = await api.get("/api/v1/transactions").query({ category_id: "cat_income_gaji" }).expect(200);
       expect(byCategory.body.data.map((t: { note: string }) => t.note)).toEqual(["Gaji bulanan"]);
 
       const empty = await api.get("/api/v1/transactions").query({ q: "   " }).expect(400);
@@ -204,7 +207,7 @@ describe("/api/v1/summary", () => {
     await api.post("/api/v1/transactions").send(gojek).expect(201);
     await api
       .post("/api/v1/transactions")
-      .send({ type: "income", amount: 12_500_000, category: "Gaji", occurred_at: "2026-11-01T09:00:00+07:00" })
+      .send({ type: "income", amount: 12_500_000, category_id: "cat_income_gaji", occurred_at: "2026-11-01T09:00:00+07:00" })
       .expect(201);
 
     const res = await api.get("/api/v1/summary").query(november).expect(200);
@@ -217,7 +220,7 @@ describe("/api/v1/summary", () => {
         transaction_count: 2,
         income_count: 1,
         expense_count: 1,
-        expense_by_category: [{ category: "Transportasi", amount: 64_000 }],
+        expense_by_category: [{ category_id: "cat_expense_transportasi", category: "Transportasi", amount: 64_000 }],
       },
     });
   });
@@ -236,5 +239,65 @@ describe("/api/v1/summary", () => {
   it("wajib login", async () => {
     const res = await request(buildApp()).get("/api/v1/summary").query(november).expect(401);
     expect(res.body.error.code).toBe("UNAUTHORIZED");
+  });
+});
+
+describe("/api/v1/categories", () => {
+  let app: ReturnType<typeof buildApp>;
+  let api: ReturnType<typeof request.agent>;
+  beforeEach(async () => {
+    app = buildApp();
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_test");
+    api = request.agent(app).set("Authorization", `Bearer ${token}`);
+  });
+
+  it("GET mengembalikan kategori bawaan per jenis dengan objek page", async () => {
+    const res = await api.get("/api/v1/categories").query({ type: "income", limit: 100 }).expect(200);
+    expect(res.body.data[0]).toEqual({ id: "cat_income_gaji", name: "Gaji", type: "income", is_default: true });
+    expect(res.body.data).toHaveLength(6);
+    expect(res.body.page).toEqual({ limit: 100, next_cursor: null });
+  });
+
+  it("POST membuat kategori kustom, lalu kategori itu bisa dipakai transaksi dan tampil namanya", async () => {
+    const created = await api.post("/api/v1/categories").send({ name: " Kos ", type: "expense" }).expect(201);
+    expect(created.body.data).toMatchObject({ name: "Kos", type: "expense", is_default: false });
+
+    const trx = await api.post("/api/v1/transactions").send({ ...gojek, category_id: created.body.data.id }).expect(201);
+    expect(trx.body.data).toMatchObject({ category_id: created.body.data.id, category: "Kos" });
+
+    const list = await api.get("/api/v1/categories").query({ type: "expense" }).expect(200);
+    expect(list.body.data.at(-1).name).toBe("Kos");
+  });
+
+  it("POST nama yang sudah ada dibalas 409 CATEGORY_ALREADY_EXISTS di field name", async () => {
+    await api.post("/api/v1/categories").send({ name: "Kos", type: "expense" }).expect(201);
+    const res = await api.post("/api/v1/categories").send({ name: "kos", type: "expense" }).expect(409);
+    expect(res.body.error).toEqual({
+      code: "CATEGORY_ALREADY_EXISTS",
+      message: "Kategori kos sudah ada",
+      details: { fieldErrors: { name: ["Kategori kos sudah ada"] } },
+    });
+  });
+
+  it("POST menolak nama kosong dan jenis yang salah", async () => {
+    const empty = await api.post("/api/v1/categories").send({ name: "   ", type: "expense" }).expect(400);
+    expect(empty.body.error.details.fieldErrors.name).toEqual(["Nama kategori wajib diisi"]);
+    const badType = await api.post("/api/v1/categories").send({ name: "Kos", type: "transfer" }).expect(400);
+    expect(badType.body.error.details.fieldErrors.type).toEqual(["Jenis harus income atau expense"]);
+  });
+
+  it("kategori kustom user lain tidak terlihat dan tidak bisa dipakai", async () => {
+    const created = await api.post("/api/v1/categories").send({ name: "Kos", type: "expense" }).expect(201);
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_budi");
+    const budi = request.agent(app).set("Authorization", `Bearer ${token}`);
+
+    const list = await budi.get("/api/v1/categories").query({ type: "expense" }).expect(200);
+    expect(list.body.data.map((c: { name: string }) => c.name)).not.toContain("Kos");
+    const res = await budi.post("/api/v1/transactions").send({ ...gojek, category_id: created.body.data.id }).expect(400);
+    expect(res.body.error.details.fieldErrors.category_id).toEqual(["Kategori tidak ditemukan"]);
+  });
+
+  it("wajib login", async () => {
+    await request(app).get("/api/v1/categories").expect(401);
   });
 });

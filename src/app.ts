@@ -4,6 +4,7 @@ import express, { Router, type Express } from "express";
 import helmet from "helmet";
 import { pinoHttp } from "pino-http";
 import type { Container } from "./di/container.ts";
+import { createCategoryRouter } from "./modules/transaction/presentation/category.routes.ts";
 import { createAuthRouter } from "./modules/auth/presentation/auth.routes.ts";
 import { createSummaryRouter, createTransactionRouter } from "./modules/transaction/presentation/transaction.routes.ts";
 import type { Logger } from "./shared/logger/logger.ts";
@@ -40,6 +41,7 @@ export function createRouterApp(container: Container): Router {
   });
   router.use("/transactions", requireAuth, createTransactionRouter(container.transactionController));
   router.use("/summary", requireAuth, createSummaryRouter(container.transactionController));
+  router.use("/categories", requireAuth, createCategoryRouter(container.categoryController));
   router.use("/auth", createAuthRouter(container.authController, { requireAuth, loginLimit }));
   return router;
 }
