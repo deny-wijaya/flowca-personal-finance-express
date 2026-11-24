@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ValidationError } from "../../../shared/domain/errors.ts";
+import { assertAccountFound, assertValidNewAccount, normalizeAccountName } from "./account.ts";
 import { assertCategoryFits, assertValidCategoryName, normalizeCategoryName, type Category } from "./category.ts";
 import { assertValidTransaction, type NewTransaction } from "./transaction.ts";
 
@@ -8,6 +9,7 @@ const valid: NewTransaction = {
   type: "expense",
   amount: 64_000,
   categoryId: "cat_expense_transportasi",
+  accountId: "acc_bca",
   note: "Gojek ke kantor",
   occurredAt: new Date("2026-11-14T08:00:00+07:00"),
 };
@@ -51,5 +53,21 @@ describe("aturan kategori", () => {
     expect(() => assertValidCategoryName("")).toThrow("Nama kategori wajib diisi");
     expect(() => assertValidCategoryName("a".repeat(31))).toThrow("Nama kategori maksimal 30 karakter");
     expect(() => assertValidCategoryName("a".repeat(30))).not.toThrow();
+  });
+});
+
+describe("aturan akun", () => {
+  it("nama dirapikan, wajib 1-40 karakter, saldo awal bilangan bulat dan boleh negatif", () => {
+    expect(normalizeAccountName("  Bank   BCA ")).toBe("Bank BCA");
+    const valid = { name: "BCA", kind: "bank" as const, openingBalance: -250_000 };
+    expect(() => assertValidNewAccount(valid)).not.toThrow();
+    expect(() => assertValidNewAccount({ ...valid, name: "" })).toThrow("Nama akun wajib diisi");
+    expect(() => assertValidNewAccount({ ...valid, name: "a".repeat(41) })).toThrow("Nama akun maksimal 40 karakter");
+    expect(() => assertValidNewAccount({ ...valid, openingBalance: 10.5 })).toThrow("Saldo awal harus bilangan bulat");
+    expect(() => assertValidNewAccount({ ...valid, openingBalance: -1_000_000_000_001 })).toThrow("Saldo awal melebihi batas");
+  });
+
+  it("assertAccountFound menolak akun yang tidak ada atau milik user lain di field account_id", () => {
+    expect(() => assertAccountFound(null)).toThrow("Akun tidak ditemukan");
   });
 });

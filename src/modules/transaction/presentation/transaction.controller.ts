@@ -37,8 +37,12 @@ export type TransactionUseCases = {
  */
 export function createTransactionController(useCases: TransactionUseCases) {
   const list: RequestHandler = async (req, res) => {
-    const { limit, cursor, category_id, ...filter } = parseRequest(listTransactionsQuerySchema, req.query);
-    const page = await useCases.listTransactions.execute(authOf(req).userId, { ...filter, categoryId: category_id }, { limit, after: cursor });
+    const { limit, cursor, category_id, account_id, ...filter } = parseRequest(listTransactionsQuerySchema, req.query);
+    const page = await useCases.listTransactions.execute(
+      authOf(req).userId,
+      { ...filter, categoryId: category_id, accountId: account_id },
+      { limit, after: cursor },
+    );
     const nextCursor = page.nextCursor ? encodeTransactionCursor(page.nextCursor) : null;
     res.json({ data: page.items.map(toTransactionDto), page: toPageDto(limit, nextCursor) });
   };
@@ -51,10 +55,11 @@ export function createTransactionController(useCases: TransactionUseCases) {
 
   const create: RequestHandler = async (req, res) => {
     const body = parseRequest(createTransactionBodySchema, req.body);
-    const { occurred_at, category_id, ...rest } = body;
+    const { occurred_at, category_id, account_id, ...rest } = body;
     const transaction = await useCases.createTransaction.execute(authOf(req).userId, {
       ...rest,
       categoryId: category_id,
+      accountId: account_id,
       occurredAt: occurred_at,
     });
     res.status(201).json({ data: toTransactionDto(transaction) });
@@ -62,10 +67,11 @@ export function createTransactionController(useCases: TransactionUseCases) {
 
   const update: RequestHandler = async (req, res) => {
     const { id } = parseRequest(transactionIdParamsSchema, req.params);
-    const { occurred_at, category_id, ...rest } = parseRequest(updateTransactionBodySchema, req.body);
+    const { occurred_at, category_id, account_id, ...rest } = parseRequest(updateTransactionBodySchema, req.body);
     const transaction = await useCases.updateTransaction.execute(authOf(req).userId, id, {
       ...rest,
       categoryId: category_id,
+      accountId: account_id,
       occurredAt: occurred_at,
     });
     res.json({ data: toTransactionDto(transaction) });

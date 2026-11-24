@@ -5,6 +5,7 @@ import { createApp } from "../../../app.ts";
 import { createContainer } from "../../../di/container.ts";
 import { InMemoryUserRepository } from "../../auth/infrastructure/in-memory-user-repository.ts";
 import { JoseTokenIssuer } from "../../auth/infrastructure/jose-token-issuer.ts";
+import { InMemoryAccountRepository } from "../infrastructure/in-memory-account-repository.ts";
 import { InMemoryCategoryRepository } from "../infrastructure/in-memory-category-repository.ts";
 import { InMemoryTransactionRepository } from "../infrastructure/in-memory-transaction-repository.ts";
 
@@ -18,9 +19,12 @@ const JWT_SECRET = "kunci-rahasia-test-yang-panjangnya-lebih-dari-32-karakter";
 
 function buildApp() {
   const categoryRepository = new InMemoryCategoryRepository();
+  const accountRepository: InMemoryAccountRepository = new InMemoryAccountRepository(() => transactionRepository.ledger());
+  const transactionRepository = new InMemoryTransactionRepository([], categoryRepository, accountRepository);
   const container = createContainer({
-    transactionRepository: new InMemoryTransactionRepository([], categoryRepository),
+    transactionRepository,
     categoryRepository,
+    accountRepository,
     userRepository: new InMemoryUserRepository(),
     jwtSecret: JWT_SECRET,
     clock: { now: () => new Date("2026-11-14T10:00:00+07:00") },
@@ -33,9 +37,17 @@ const gojek = {
   type: "expense",
   amount: 64_000,
   category_id: "cat_expense_transportasi",
+  // Diisi di beforeEach dengan akun milik user yang sedang login.
+  account_id: "",
   note: "Gojek ke kantor",
   occurred_at: "2026-11-06T09:00:00+07:00",
 };
+
+/** Membuat akun lewat API dan mengembalikan id-nya. */
+async function createAccount(agent: ReturnType<typeof request.agent>, name: string, openingBalance = 0): Promise<string> {
+  const res = await agent.post("/api/v1/accounts").send({ name, kind: "bank", opening_balance: openingBalance }).expect(201);
+  return res.body.data.id;
+}
 
 describe("/api/v1/transactions", () => {
   let app: ReturnType<typeof buildApp>;
@@ -44,6 +56,7 @@ describe("/api/v1/transactions", () => {
     app = buildApp();
     const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_test");
     api = request.agent(app).set("Authorization", `Bearer ${token}`);
+    gojek.account_id = await createAccount(api, "BCA");
   });
 
   it("transaksi milik user lain dibalas 404, persis seperti transaksi yang tidak ada", async () => {
@@ -173,7 +186,7 @@ describe("/api/v1/transactions", () => {
       await seed(2);
       await api
         .post("/api/v1/transactions")
-        .send({ type: "income", amount: 12_500_000, category_id: "cat_income_gaji", note: "Gaji bulanan", occurred_at: "2026-11-01T09:00:00+07:00" })
+        .send({ type: "income", amount: 12_500_000, category_id: "cat_income_gaji", account_id: gojek.account_id, note: "Gaji bulanan", occurred_at: "2026-11-01T09:00:00+07:00" })
         .expect(201);
 
       const byQ = await api.get("/api/v1/transactions").query({ q: "GOJEK KE-2" }).expect(200);
@@ -199,6 +212,7 @@ describe("/api/v1/summary", () => {
     const app = buildApp();
     const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_test");
     api = request.agent(app).set("Authorization", `Bearer ${token}`);
+    gojek.account_id = await createAccount(api, "BCA");
   });
 
   const november = { from: "2026-11-01T00:00:00+07:00", to: "2026-11-30T23:59:59.999+07:00" };
@@ -207,7 +221,7 @@ describe("/api/v1/summary", () => {
     await api.post("/api/v1/transactions").send(gojek).expect(201);
     await api
       .post("/api/v1/transactions")
-      .send({ type: "income", amount: 12_500_000, category_id: "cat_income_gaji", occurred_at: "2026-11-01T09:00:00+07:00" })
+      .send({ type: "income", amount: 12_500_000, category_id: "cat_income_gaji", account_id: gojek.account_id, occurred_at: "2026-11-01T09:00:00+07:00" })
       .expect(201);
 
     const res = await api.get("/api/v1/summary").query(november).expect(200);
@@ -249,6 +263,7 @@ describe("/api/v1/categories", () => {
     app = buildApp();
     const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_test");
     api = request.agent(app).set("Authorization", `Bearer ${token}`);
+    gojek.account_id = await createAccount(api, "BCA");
   });
 
   it("GET mengembalikan kategori bawaan per jenis dengan objek page", async () => {
@@ -299,5 +314,74 @@ describe("/api/v1/categories", () => {
 
   it("wajib login", async () => {
     await request(app).get("/api/v1/categories").expect(401);
+  });
+});
+
+describe("/api/v1/accounts", () => {
+  let app: ReturnType<typeof buildApp>;
+  let api: ReturnType<typeof request.agent>;
+  beforeEach(async () => {
+    app = buildApp();
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_test");
+    api = request.agent(app).set("Authorization", `Bearer ${token}`);
+  });
+
+  it("POST membuat akun, GET mengembalikan saldo saat ini yang ikut berubah oleh transaksi", async () => {
+    const created = await api.post("/api/v1/accounts").send({ name: " BCA ", kind: "bank", opening_balance: 2_000_000 }).expect(201);
+    expect(created.body.data).toMatchObject({ name: "BCA", kind: "bank", opening_balance: 2_000_000, balance: 2_000_000 });
+    expect(created.body.data.id).toMatch(/^acc_/);
+
+    await api.post("/api/v1/transactions").send({ ...gojek, account_id: created.body.data.id }).expect(201);
+
+    const list = await api.get("/api/v1/accounts").expect(200);
+    expect(list.body).toEqual({
+      data: [{ ...created.body.data, balance: 2_000_000 - 64_000 }],
+      page: { limit: 20, next_cursor: null },
+    });
+  });
+
+  it("transaksi membawa account_id dan nama akun, dan bisa difilter per akun", async () => {
+    const bca = await createAccount(api, "BCA");
+    const tunai = await createAccount(api, "Tunai");
+    const trx = await api.post("/api/v1/transactions").send({ ...gojek, account_id: tunai }).expect(201);
+    expect(trx.body.data).toMatchObject({ account_id: tunai, account: "Tunai" });
+    await api.post("/api/v1/transactions").send({ ...gojek, account_id: bca }).expect(201);
+
+    const filtered = await api.get("/api/v1/transactions").query({ account_id: tunai }).expect(200);
+    expect(filtered.body.data.map((t: { id: string }) => t.id)).toEqual([trx.body.data.id]);
+  });
+
+  it("POST /transactions tanpa account_id atau dengan akun milik user lain dibalas 400", async () => {
+    // undefined tidak ikut dikirim di JSON, jadi body ini sama dengan body tanpa account_id.
+    const missing = await api.post("/api/v1/transactions").send({ ...gojek, account_id: undefined }).expect(400);
+    expect(missing.body.error.details.fieldErrors.account_id).toEqual(["Akun wajib diisi"]);
+
+    const { token } = await new JoseTokenIssuer({ secret: JWT_SECRET, expiresIn: 3600 }).issue("usr_budi");
+    const budi = request.agent(app).set("Authorization", `Bearer ${token}`);
+    const milikBudi = await createAccount(budi, "Dompet Budi");
+    const foreign = await api.post("/api/v1/transactions").send({ ...gojek, account_id: milikBudi }).expect(400);
+    expect(foreign.body.error.details.fieldErrors.account_id).toEqual(["Akun tidak ditemukan"]);
+
+    const budiList = await budi.get("/api/v1/accounts").expect(200);
+    expect(budiList.body.data.map((a: { name: string }) => a.name)).toEqual(["Dompet Budi"]);
+  });
+
+  it("POST nama dobel dibalas 409 ACCOUNT_ALREADY_EXISTS, jenis dan saldo yang salah dibalas 400", async () => {
+    await createAccount(api, "BCA");
+    const dup = await api.post("/api/v1/accounts").send({ name: "bca", kind: "bank", opening_balance: 0 }).expect(409);
+    expect(dup.body.error).toEqual({
+      code: "ACCOUNT_ALREADY_EXISTS",
+      message: "Akun bca sudah ada",
+      details: { fieldErrors: { name: ["Akun bca sudah ada"] } },
+    });
+
+    const badKind = await api.post("/api/v1/accounts").send({ name: "Dana", kind: "saham", opening_balance: 0 }).expect(400);
+    expect(badKind.body.error.details.fieldErrors.kind).toEqual(["Jenis akun harus cash, bank, ewallet, atau credit"]);
+    const badBalance = await api.post("/api/v1/accounts").send({ name: "Dana", kind: "ewallet", opening_balance: "seratus" }).expect(400);
+    expect(badBalance.body.error.details.fieldErrors.opening_balance).toEqual(["Saldo awal wajib berupa angka"]);
+  });
+
+  it("wajib login", async () => {
+    await request(app).get("/api/v1/accounts").expect(401);
   });
 });

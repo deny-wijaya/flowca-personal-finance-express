@@ -9,10 +9,11 @@ import type {
   TransactionRepository,
   TransactionTotals,
 } from "../domain/transaction-repository.ts";
+import { InMemoryAccountRepository, type LedgerEntry } from "./in-memory-account-repository.ts";
 import { InMemoryCategoryRepository } from "./in-memory-category-repository.ts";
 
 /** Isi satu baris tabel transactions: sama dengan Transaction, tanpa nama kategori (didapat dari JOIN). */
-export type StoredTransaction = Omit<Transaction, "category">;
+export type StoredTransaction = Omit<Transaction, "category" | "account">;
 
 /**
  * Implementasi repository yang menyimpan data di memori proses. Dipakai oleh test supaya tidak butuh Docker.
@@ -22,10 +23,21 @@ export type StoredTransaction = Omit<Transaction, "category">;
 export class InMemoryTransactionRepository implements TransactionRepository {
   readonly #rows = new Map<string, StoredTransaction>();
   readonly #categories: InMemoryCategoryRepository;
+  readonly #accounts: InMemoryAccountRepository;
 
-  constructor(seed: StoredTransaction[] = [], categories: InMemoryCategoryRepository = new InMemoryCategoryRepository()) {
+  constructor(
+    seed: StoredTransaction[] = [],
+    categories: InMemoryCategoryRepository = new InMemoryCategoryRepository(),
+    accounts: InMemoryAccountRepository = new InMemoryAccountRepository(),
+  ) {
     for (const row of seed) this.#rows.set(row.id, row);
     this.#categories = categories;
+    this.#accounts = accounts;
+  }
+
+  /** Semua transaksi untuk menghitung saldo di InMemoryAccountRepository (pengganti SUM di Postgres). */
+  ledger(): Iterable<LedgerEntry> {
+    return this.#rows.values();
   }
 
   async list(userId: string, filter: TransactionFilter, page: PageRequest<TransactionCursor>): Promise<TransactionPage> {
@@ -83,7 +95,7 @@ export class InMemoryTransactionRepository implements TransactionRepository {
   }
 
   #withCategory(row: StoredTransaction): Transaction {
-    return { ...row, category: this.#categories.nameOf(row.categoryId) };
+    return { ...row, category: this.#categories.nameOf(row.categoryId), account: this.#accounts.nameOf(row.accountId) };
   }
 
   #matching(userId: string, filter: TransactionFilter): Transaction[] {
@@ -97,6 +109,7 @@ export class InMemoryTransactionRepository implements TransactionRepository {
         if (filter.to && time > filter.to.getTime()) return false;
         if (filter.type && trx.type !== filter.type) return false;
         if (filter.categoryId && trx.categoryId !== filter.categoryId) return false;
+        if (filter.accountId && trx.accountId !== filter.accountId) return false;
         if (q && !`${trx.note ?? ""} ${trx.category}`.toLowerCase().includes(q)) return false;
         return true;
       });
@@ -113,11 +126,11 @@ function newestFirst(a: Pick<Transaction, "occurredAt" | "id">, b: Pick<Transact
 /**
  * Contoh data bulan berjalan (sama dengan mock di frontend) milik `userId`, supaya Dashboard langsung terisi.
  * Id-nya tetap per user (`seed-1-<userId>`), jadi script seed aman dijalankan berkali-kali.
- * Kategorinya memakai id kategori bawaan (DEFAULT_CATEGORIES).
+ * Kategorinya memakai id kategori bawaan (DEFAULT_CATEGORIES), dan semuanya dicatat di akun `accountId`.
  */
-export function createSeedTransactions(userId: string, now: Date = new Date()): StoredTransaction[] {
+export function createSeedTransactions(userId: string, accountId: string | null, now: Date = new Date()): StoredTransaction[] {
   const day = (d: number) => new Date(now.getFullYear(), now.getMonth(), Math.min(d, now.getDate()), 9);
-  const rows: NewTransaction[] = [
+  const rows: Omit<NewTransaction, "accountId">[] = [
     { type: "income", amount: 12_500_000, categoryId: "cat_income_gaji", note: "Gaji bulanan", occurredAt: day(1) },
     { type: "expense", amount: 1_850_000, categoryId: "cat_expense_tagihan", note: "Cicilan kos", occurredAt: day(2) },
     { type: "expense", amount: 450_000, categoryId: "cat_expense_tagihan", note: "Token listrik PLN", occurredAt: day(3) },
@@ -129,6 +142,7 @@ export function createSeedTransactions(userId: string, now: Date = new Date()): 
   ];
   return rows.map((row, index) => ({
     ...row,
+    accountId,
     userId,
     id: `seed-${index + 1}-${userId}`,
     createdAt: row.occurredAt,

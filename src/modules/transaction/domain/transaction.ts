@@ -22,6 +22,10 @@ export type Transaction = {
   categoryId: string;
   /** Nama kategori, dibaca lewat JOIN saat transaksi diambil. Tidak disimpan di tabel transactions. */
   category: string;
+  /** Id akun tempat uang masuk atau keluar. null untuk transaksi lama yang dicatat sebelum fitur akun ada. */
+  accountId: string | null;
+  /** Nama akun, dibaca lewat JOIN. null kalau accountId null. */
+  account: string | null;
   note: string | null;
   occurredAt: Date;
   createdAt: Date;
@@ -29,7 +33,7 @@ export type Transaction = {
 };
 
 /** Data yang dikirim user saat membuat transaksi. Id dan timestamp diisi oleh repository. */
-export type NewTransaction = Pick<Transaction, "type" | "amount" | "categoryId" | "note" | "occurredAt">;
+export type NewTransaction = Pick<Transaction, "type" | "amount" | "categoryId" | "accountId" | "note" | "occurredAt">;
 
 /** Field yang boleh diubah lewat PATCH. */
 export type TransactionChanges = Partial<NewTransaction>;

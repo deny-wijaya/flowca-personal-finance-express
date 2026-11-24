@@ -11,11 +11,12 @@ import type {
   TransactionRepository,
   TransactionTotals,
 } from "../domain/transaction-repository.ts";
-import { categories, transactions } from "./transaction.table.ts";
+import { accounts, categories, transactions } from "./transaction.table.ts";
 
 /**
- * Kolom yang dibaca untuk satu Transaction. Nama kategori diambil lewat JOIN ke tabel categories,
- * karena tabel transactions hanya menyimpan category_id.
+ * Kolom yang dibaca untuk satu Transaction. Nama kategori dan nama akun diambil lewat JOIN, karena
+ * tabel transactions hanya menyimpan category_id dan account_id. Akun memakai LEFT JOIN, karena
+ * transaksi lama boleh tanpa akun (account_id NULL), dan INNER JOIN akan membuang baris itu.
  */
 const transactionColumns = {
   id: transactions.id,
@@ -24,6 +25,8 @@ const transactionColumns = {
   amount: transactions.amount,
   categoryId: transactions.categoryId,
   category: categories.name,
+  accountId: transactions.accountId,
+  account: accounts.name,
   note: transactions.note,
   occurredAt: transactions.occurredAt,
   createdAt: transactions.createdAt,
@@ -57,6 +60,7 @@ export class PostgresTransactionRepository implements TransactionRepository {
       .select(transactionColumns)
       .from(transactions)
       .innerJoin(categories, eq(categories.id, transactions.categoryId))
+      .leftJoin(accounts, eq(accounts.id, transactions.accountId))
       .where(
         and(
           eq(transactions.userId, userId),
@@ -64,6 +68,7 @@ export class PostgresTransactionRepository implements TransactionRepository {
           filter.to ? lte(transactions.occurredAt, filter.to) : undefined,
           filter.type ? eq(transactions.type, filter.type) : undefined,
           filter.categoryId ? eq(transactions.categoryId, filter.categoryId) : undefined,
+          filter.accountId ? eq(transactions.accountId, filter.accountId) : undefined,
           pattern ? or(ilike(transactions.note, pattern), ilike(categories.name, pattern)) : undefined,
           // Keyset pagination: ambil baris yang urutannya tepat sesudah transaksi terakhir di halaman
           // sebelumnya. Perbandingan baris (a, b) < (x, y) artinya a < x, atau a = x dan b < y.
@@ -87,6 +92,7 @@ export class PostgresTransactionRepository implements TransactionRepository {
       .select(transactionColumns)
       .from(transactions)
       .innerJoin(categories, eq(categories.id, transactions.categoryId))
+      .leftJoin(accounts, eq(accounts.id, transactions.accountId))
       .where(and(eq(transactions.id, id), eq(transactions.userId, userId)));
     return row ?? null;
   }

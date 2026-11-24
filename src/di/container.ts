@@ -11,18 +11,23 @@ import { JoseTokenVerifier } from "../modules/auth/infrastructure/jose-token-ver
 import { PostgresUserRepository } from "../modules/auth/infrastructure/postgres-user-repository.ts";
 import { createAuthController } from "../modules/auth/presentation/auth.controller.ts";
 import { systemClock, type Clock } from "../modules/transaction/application/clock.ts";
+import { CreateAccount } from "../modules/transaction/application/create-account.ts";
 import { CreateCategory } from "../modules/transaction/application/create-category.ts";
 import { CreateTransaction } from "../modules/transaction/application/create-transaction.ts";
 import { DeleteTransaction } from "../modules/transaction/application/delete-transaction.ts";
+import { ListAccounts } from "../modules/transaction/application/list-accounts.ts";
 import { ListCategories } from "../modules/transaction/application/list-categories.ts";
 import { GetSummary } from "../modules/transaction/application/get-summary.ts";
 import { GetTransaction } from "../modules/transaction/application/get-transaction.ts";
 import { ListTransactions } from "../modules/transaction/application/list-transactions.ts";
 import { UpdateTransaction } from "../modules/transaction/application/update-transaction.ts";
+import type { AccountRepository } from "../modules/transaction/domain/account-repository.ts";
 import type { CategoryRepository } from "../modules/transaction/domain/category-repository.ts";
 import type { TransactionRepository } from "../modules/transaction/domain/transaction-repository.ts";
+import { PostgresAccountRepository } from "../modules/transaction/infrastructure/postgres-account-repository.ts";
 import { PostgresCategoryRepository } from "../modules/transaction/infrastructure/postgres-category-repository.ts";
 import { PostgresTransactionRepository } from "../modules/transaction/infrastructure/postgres-transaction-repository.ts";
+import { createAccountController } from "../modules/transaction/presentation/account.controller.ts";
 import { createCategoryController } from "../modules/transaction/presentation/category.controller.ts";
 import { createTransactionController } from "../modules/transaction/presentation/transaction.controller.ts";
 import { createDatabase } from "../shared/database/database.ts";
@@ -38,6 +43,7 @@ export type ContainerOverrides = {
   databaseUrl?: string;
   transactionRepository?: TransactionRepository;
   categoryRepository?: CategoryRepository;
+  accountRepository?: AccountRepository;
   userRepository?: UserRepository;
   passwordHasher?: PasswordHasher;
   /** Wajib diisi kalau `tokenIssuer` atau `tokenVerifier` tidak diberikan. */
@@ -51,11 +57,13 @@ export type ContainerOverrides = {
 
 export function createContainer(overrides: ContainerOverrides = {}) {
   const clock = overrides.clock ?? systemClock;
-  const needsDatabase = !overrides.transactionRepository || !overrides.categoryRepository || !overrides.userRepository;
+  const needsDatabase =
+    !overrides.transactionRepository || !overrides.categoryRepository || !overrides.accountRepository || !overrides.userRepository;
   const database = needsDatabase ? openDatabase(overrides.databaseUrl) : undefined;
   const transactionRepository =
     overrides.transactionRepository ?? new PostgresTransactionRepository(database!.db);
   const categoryRepository = overrides.categoryRepository ?? new PostgresCategoryRepository(database!.db);
+  const accountRepository = overrides.accountRepository ?? new PostgresAccountRepository(database!.db);
   const userRepository = overrides.userRepository ?? new PostgresUserRepository(database!.db);
   const passwordHasher = overrides.passwordHasher ?? new Argon2PasswordHasher();
   const tokenIssuer = overrides.tokenIssuer ?? createTokenIssuer(overrides);
@@ -63,8 +71,8 @@ export function createContainer(overrides: ContainerOverrides = {}) {
 
   const transactionController = createTransactionController({
     listTransactions: new ListTransactions(transactionRepository),
-    createTransaction: new CreateTransaction(transactionRepository, categoryRepository, clock),
-    updateTransaction: new UpdateTransaction(transactionRepository, categoryRepository, clock),
+    createTransaction: new CreateTransaction(transactionRepository, categoryRepository, accountRepository, clock),
+    updateTransaction: new UpdateTransaction(transactionRepository, categoryRepository, accountRepository, clock),
     deleteTransaction: new DeleteTransaction(transactionRepository),
     getTransaction: new GetTransaction(transactionRepository),
     getSummary: new GetSummary(transactionRepository),
@@ -73,6 +81,11 @@ export function createContainer(overrides: ContainerOverrides = {}) {
   const categoryController = createCategoryController({
     listCategories: new ListCategories(categoryRepository),
     createCategory: new CreateCategory(categoryRepository),
+  });
+
+  const accountController = createAccountController({
+    listAccounts: new ListAccounts(accountRepository),
+    createAccount: new CreateAccount(accountRepository),
   });
 
   const authController = createAuthController({
@@ -85,7 +98,7 @@ export function createContainer(overrides: ContainerOverrides = {}) {
   const close = database ? database.close : async () => {};
 
   // tokenVerifier dipakai app.ts untuk membuat middleware requireAuth.
-  return { transactionController, categoryController, authController, tokenVerifier, close };
+  return { transactionController, categoryController, accountController, authController, tokenVerifier, close };
 }
 
 function createTokenIssuer(overrides: ContainerOverrides): TokenIssuer {

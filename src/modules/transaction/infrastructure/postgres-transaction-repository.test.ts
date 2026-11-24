@@ -3,7 +3,9 @@ import { createDatabase } from "../../../shared/database/database.ts";
 import { users } from "../../auth/infrastructure/user.table.ts";
 import type { NewTransaction } from "../domain/transaction.ts";
 import { PostgresTransactionRepository } from "./postgres-transaction-repository.ts";
-import { categories, transactions } from "./transaction.table.ts";
+import { accounts, categories, transactions } from "./transaction.table.ts";
+import { PostgresAccountRepository } from "./postgres-account-repository.ts";
+import { AccountAlreadyExistsError } from "../domain/account.ts";
 import { PostgresCategoryRepository } from "./postgres-category-repository.ts";
 import { CategoryAlreadyExistsError } from "../domain/category.ts";
 import { isNotNull, eq } from "drizzle-orm";
@@ -24,11 +26,13 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
   const { db, close } = createDatabase(url!);
   const repository = new PostgresTransactionRepository(db);
   const categoryRepository = new PostgresCategoryRepository(db);
+  const accountRepository = new PostgresAccountRepository(db);
 
   const gaji: NewTransaction = {
     type: "income",
     amount: 12_500_000,
     categoryId: "cat_income_gaji",
+    accountId: null,
     note: "Gaji bulanan",
     occurredAt: new Date("2026-11-01T09:00:00+07:00"),
   };
@@ -36,12 +40,14 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
     type: "expense",
     amount: 64_000,
     categoryId: "cat_expense_transportasi",
+    accountId: null,
     note: "Gojek ke kantor",
     occurredAt: new Date("2026-11-06T09:00:00+07:00"),
   };
 
   beforeEach(async () => {
     await db.delete(transactions);
+    await db.delete(accounts);
     // Kategori bawaan (dari migration) tetap ada; hanya kategori kustom dari test sebelumnya yang dihapus.
     await db.delete(categories).where(isNotNull(categories.userId));
     await db
@@ -237,6 +243,18 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
     await expect(categoryRepository.create(BUDI, { name: "Kos", type: "expense" })).resolves.toMatchObject({ userId: BUDI });
   });
 
+  it("pagination kategori kustom tidak mengulang kategori yang menjadi cursor (created_at presisi milidetik)", async () => {
+    for (const name of ["Kos", "Hewan", "Arisan"]) await categoryRepository.create(RANI, { name, type: "expense" });
+    const seen: string[] = [];
+    let page = await categoryRepository.list(RANI, { type: "expense" }, { limit: 9 });
+    seen.push(...page.items.map((c) => c.name));
+    page = await categoryRepository.list(RANI, { type: "expense" }, { limit: 9, after: page.nextCursor! });
+    seen.push(...page.items.map((c) => c.name));
+    const all = await categoryRepository.list(RANI, { type: "expense" }, { limit: 100 });
+    expect(seen).toEqual(all.items.map((c) => c.name));
+    expect(new Set(seen).size).toBe(11);
+  });
+
   it("dua request bersamaan dengan nama sama: satu berhasil, satu ditolak unique index", async () => {
     const results = await Promise.allSettled([
       categoryRepository.create(RANI, { name: "Kos", type: "expense" }),
@@ -264,5 +282,75 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
     await db.delete(users).where(eq(users.id, temp));
 
     expect(await categoryRepository.findById(temp, kos.id)).toBeNull();
+  });
+
+  describe("akun", () => {
+    it("saldo dihitung dengan LEFT JOIN + SUM: saldo awal + pemasukan − pengeluaran, akun tanpa transaksi tetap muncul", async () => {
+      const bca = await accountRepository.create(RANI, { name: "BCA", kind: "bank", openingBalance: 2_000_000 });
+      const tunai = await accountRepository.create(RANI, { name: "Tunai", kind: "cash", openingBalance: 500_000 });
+      await accountRepository.create(BUDI, { name: "Dompet Budi", kind: "cash", openingBalance: 9_000 });
+      await repository.create(RANI, { ...gaji, accountId: bca.id });
+      await repository.create(RANI, { ...gojek, amount: 1_500_000, accountId: bca.id });
+      await repository.create(RANI, { ...gojek, amount: 900_000_000_000, accountId: bca.id });
+
+      const page = await accountRepository.list(RANI, { limit: 20 });
+
+      // Diurutkan per nama di sini, karena dua akun yang dibuat di milidetik yang sama urutannya ditentukan id acak.
+      const rows = page.items.map((a) => [a.name, a.openingBalance, a.balance]).sort((x, y) => String(x[0]).localeCompare(String(y[0])));
+      expect(rows).toEqual([
+        ["BCA", 2_000_000, 2_000_000 + 12_500_000 - 1_500_000 - 900_000_000_000],
+        ["Tunai", 500_000, 500_000],
+      ]);
+      expect(page.items.every((a) => typeof a.balance === "number")).toBe(true);
+      expect(tunai.balance).toBe(500_000);
+    });
+
+    it("list akun memakai keyset pagination", async () => {
+      for (const name of ["A", "B", "C"]) await accountRepository.create(RANI, { name, kind: "cash", openingBalance: 0 });
+      const first = await accountRepository.list(RANI, { limit: 2 });
+      const second = await accountRepository.list(RANI, { limit: 2, after: first.nextCursor! });
+      // Akun yang dibuat di milidetik yang sama diurutkan berdasarkan id (acak), jadi yang dicek adalah
+      // gabungan halaman sama persis dengan daftar lengkap: tidak ada yang dobel atau terlewat.
+      const all = await accountRepository.list(RANI, { limit: 100 });
+      expect([...first.items, ...second.items].map((a) => a.id)).toEqual(all.items.map((a) => a.id));
+      expect(all.items).toHaveLength(3);
+      expect(second.nextCursor).toBeNull();
+    });
+
+    it("nama akun unik per user tanpa beda huruf besar kecil, termasuk dua request bersamaan", async () => {
+      await accountRepository.create(RANI, { name: "BCA", kind: "bank", openingBalance: 0 });
+      await expect(accountRepository.create(RANI, { name: "bca", kind: "bank", openingBalance: 0 })).rejects.toBeInstanceOf(AccountAlreadyExistsError);
+      await expect(accountRepository.create(BUDI, { name: "BCA", kind: "bank", openingBalance: 0 })).resolves.toMatchObject({ userId: BUDI });
+
+      const results = await Promise.allSettled([
+        accountRepository.create(RANI, { name: "GoPay", kind: "ewallet", openingBalance: 0 }),
+        accountRepository.create(RANI, { name: "GoPay", kind: "ewallet", openingBalance: 0 }),
+      ]);
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    });
+
+    it("akun milik user lain tidak terbaca, dan transaksi membawa nama akun lewat LEFT JOIN", async () => {
+      const bca = await accountRepository.create(RANI, { name: "BCA", kind: "bank", openingBalance: 0 });
+      expect(await accountRepository.findById(BUDI, bca.id)).toBeNull();
+
+      const withAccount = await repository.create(RANI, { ...gojek, accountId: bca.id });
+      const withoutAccount = await repository.create(RANI, gaji);
+      expect(withAccount).toMatchObject({ accountId: bca.id, account: "BCA" });
+      expect(withoutAccount).toMatchObject({ accountId: null, account: null });
+
+      const filtered = await repository.list(RANI, { accountId: bca.id }, firstPage);
+      expect(filtered.items.map((t) => t.id)).toEqual([withAccount.id]);
+    });
+
+    it("akun yang masih dipakai transaksi tidak bisa dihapus, tapi menghapus user ikut menghapus akun dan transaksinya", async () => {
+      const temp = "usr_test_hapus_akun";
+      await db.insert(users).values({ id: temp, name: "User Sementara", email: "hapus.akun@email.com", passwordHash: "hash" });
+      const dompet = await accountRepository.create(temp, { name: "Dompet", kind: "cash", openingBalance: 0 });
+      await repository.create(temp, { ...gojek, accountId: dompet.id });
+
+      await expect(db.delete(accounts).where(eq(accounts.id, dompet.id))).rejects.toThrow();
+      await db.delete(users).where(eq(users.id, temp));
+      expect(await accountRepository.findById(temp, dompet.id)).toBeNull();
+    });
   });
 });
