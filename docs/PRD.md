@@ -72,8 +72,8 @@ Kolom **Status** menunjukkan apa yang sudah ada di boilerplate.
 |---|---|---|---|
 | A1 | `GET /transactions` | Menu **Transaksi** kartu **Transaksi bulan ini**, dan menu **Dashboard** saat halaman dibuka | Selesai |
 | A2 | `POST /transactions` | Form **Tambah transaksi** di menu **Transaksi**, saat tombol simpan ditekan | Selesai |
-| A3 | `PATCH /transactions/:id` | Aksi **Ubah** di daftar transaksi (frontend belum ada) | Selesai di API |
-| A4 | `DELETE /transactions/:id` | Aksi **Hapus** di daftar transaksi (frontend belum ada) | Selesai di API |
+| A3 | `PATCH /transactions/:id`, `POST /transactions/bulk-update` | Sheet **Ubah transaksi** (ketuk baris transaksi), dan aksi massal **Ubah kategori** / **Pindah akun** di tabel desktop | Selesai |
+| A4 | `DELETE /transactions/:id`, `POST /transactions/bulk-delete` | Tombol **Hapus transaksi** di sheet ubah, dan aksi massal **Hapus** di tabel desktop | Selesai |
 | A5 | Cursor pagination, filter kategori, dan pencarian `q` di `GET /transactions` (`API-CONTRACT.md` bagian 4.4). Pagination wajib untuk semua endpoint daftar | Daftar dan pencarian di menu **Transaksi** | Selesai (Fase 3) |
 | A6 | Kategori di tabel `categories`, `GET` dan `POST /categories`, transaksi menyimpan `category_id` (`API-CONTRACT.md` bagian 4.6 dan 4.7) | Chip kategori dan **+ Kategori baru** di form **Tambah transaksi**, filter Kategori di menu **Transaksi** | Belum |
 

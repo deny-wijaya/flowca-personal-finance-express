@@ -80,6 +80,8 @@ Kita memakai cursor, bukan offset (`page=2`), karena data transaksi terus bertam
 | `POST` | `/transactions` | Wajib | `{ type, amount, category_id, account_id, note?, occurred_at }` (lihat 4.7 dan 4.9) | `TransactionDto`, status `201` |
 | `PATCH` | `/transactions/:id` | Wajib | Minimal satu field dari body `POST` | `TransactionDto` |
 | `DELETE` | `/transactions/:id` | Wajib | - | Kosong, status `204` |
+| `POST` | `/transactions/bulk-delete` | Wajib | `{ ids }` (lihat 4.11) | `{ deleted }` |
+| `POST` | `/transactions/bulk-update` | Wajib | `{ ids, changes: { category_id?, account_id? } }` (lihat 4.11) | `{ updated }` |
 | `GET` | `/accounts` | Wajib | `limit`, `cursor`, semua opsional (lihat 4.8) | `AccountDto[]` dengan `page` |
 | `POST` | `/accounts` | Wajib | `{ name, kind, opening_balance }` (lihat 4.8) | `AccountDto`, status `201` |
 | `GET` | `/budgets` | Wajib | `limit`, `cursor`, semua opsional (lihat 4.10) | `BudgetDto[]` dengan `page` |
@@ -551,3 +553,50 @@ Dipanggil saat pengguna menyimpan nominal anggaran di menu **Anggaran**, baik da
 **`DELETE /budgets/:category_id`**
 
 Dipanggil saat pengguna menghapus anggaran satu kategori di menu **Anggaran**. Berhasil dibalas `204` tanpa body. Kalau kategori itu tidak punya anggaran, dibalas `404 NOT_FOUND`. Transaksi di kategori itu tidak ikut terhapus.
+
+### 4.11 Aksi massal transaksi (`POST /transactions/bulk-delete` dan `/transactions/bulk-update`)
+
+Dipanggil dari bar aksi di tabel menu **Transaksi** (desktop), setelah pengguna mencentang beberapa transaksi lalu menekan **Hapus**, **Ubah kategori**, atau **Pindah akun**.
+
+**Berhasil semua atau tidak sama sekali.** Kedua endpoint dijalankan di dalam satu transaksi database. Kalau satu saja transaksi yang dipilih tidak bisa diproses, misalnya sudah dihapus dari perangkat lain atau milik pengguna lain, tidak ada satu pun yang berubah. Dengan begitu pengguna tidak pernah mendapat hasil setengah jadi.
+
+Aturan `ids` untuk kedua endpoint:
+
+| Aturan | Response kalau dilanggar |
+|---|---|
+| Array berisi 1-100 id transaksi. Id yang sama dua kali dihitung sekali | `400 VALIDATION_ERROR` di `details.fieldErrors.ids` |
+| Semua id harus transaksi milik pemilik token | `404 NOT_FOUND` dengan pesan "Sebagian transaksi tidak ditemukan. Tidak ada yang diubah." |
+
+**`POST /transactions/bulk-delete`**
+
+```json
+{ "ids": ["trx_1", "trx_2", "trx_3"] }
+```
+
+Sukses dibalas `200` dengan jumlah transaksi yang dihapus:
+
+```json
+{ "data": { "deleted": 3 } }
+```
+
+**`POST /transactions/bulk-update`**
+
+Mengganti kategori, akun, atau keduanya untuk semua transaksi yang dipilih. Minimal satu dari `category_id` dan `account_id` harus dikirim.
+
+```json
+{ "ids": ["trx_1", "trx_2"], "changes": { "category_id": "cat_expense_transportasi" } }
+```
+
+Sukses dibalas `200` dengan jumlah transaksi yang diubah:
+
+```json
+{ "data": { "updated": 2 } }
+```
+
+| Kondisi | Response |
+|---|---|
+| `changes` kosong | `400 VALIDATION_ERROR` di `details.fieldErrors.changes`: "Pilih kategori atau akun yang mau diubah" |
+| Kategori tidak ditemukan, atau jenisnya tidak cocok dengan salah satu transaksi (misalnya kategori pengeluaran untuk pemasukan) | `400 VALIDATION_ERROR` di `details.fieldErrors.category_id`, dengan pesan yang sama seperti bagian 4.7 |
+| Akun tidak ditemukan atau milik pengguna lain | `400 VALIDATION_ERROR` di `details.fieldErrors.account_id`: "Akun tidak ditemukan" |
+
+Karena kategori harus cocok dengan jenis transaksi, frontend sebaiknya hanya menawarkan **Ubah kategori** kalau semua transaksi yang dipilih berjenis sama.

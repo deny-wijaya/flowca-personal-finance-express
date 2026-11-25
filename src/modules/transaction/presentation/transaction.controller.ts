@@ -8,7 +8,10 @@ import type { ListTransactions } from "../application/list-transactions.ts";
 import type { UpdateTransaction } from "../application/update-transaction.ts";
 import type { GetTransaction } from "../application/get-transaction.ts";
 import type { GetSummary } from "../application/get-summary.ts";
+import type { BulkDeleteTransactions, BulkUpdateTransactions } from "../application/bulk-transactions.ts";
 import {
+  bulkDeleteBodySchema,
+  bulkUpdateBodySchema,
   createTransactionBodySchema,
   encodeTransactionCursor,
   listTransactionsQuerySchema,
@@ -27,6 +30,8 @@ export type TransactionUseCases = {
   updateTransaction: UpdateTransaction;
   deleteTransaction: DeleteTransaction;
   getSummary: GetSummary;
+  bulkDeleteTransactions: BulkDeleteTransactions;
+  bulkUpdateTransactions: BulkUpdateTransactions;
 };
 
 /**
@@ -89,7 +94,22 @@ export function createTransactionController(useCases: TransactionUseCases) {
     res.json({ data: toSummaryDto(result) });
   };
 
-  return { list, create, update, remove, get, summary };
+  const bulkDelete: RequestHandler = async (req, res) => {
+    const { ids } = parseRequest(bulkDeleteBodySchema, req.body);
+    const deleted = await useCases.bulkDeleteTransactions.execute(authOf(req).userId, ids);
+    res.json({ data: { deleted } });
+  };
+
+  const bulkUpdate: RequestHandler = async (req, res) => {
+    const { ids, changes } = parseRequest(bulkUpdateBodySchema, req.body);
+    const updated = await useCases.bulkUpdateTransactions.execute(authOf(req).userId, ids, {
+      categoryId: changes.category_id,
+      accountId: changes.account_id,
+    });
+    res.json({ data: { updated } });
+  };
+
+  return { list, create, update, remove, get, summary, bulkDelete, bulkUpdate };
 }
 
 export type TransactionController = ReturnType<typeof createTransactionController>;

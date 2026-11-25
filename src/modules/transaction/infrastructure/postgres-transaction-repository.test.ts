@@ -396,4 +396,33 @@ describe.skipIf(!url)("PostgresTransactionRepository", () => {
       expect((await budgetRepository.list(RANI, { limit: 20 })).items).toEqual([]);
     });
   });
+
+  describe("aksi massal (database transaction)", () => {
+    it("deleteAll menghapus semua, atau ROLLBACK kalau ada satu id milik user lain", async () => {
+      const a = await repository.create(RANI, gojek);
+      const b = await repository.create(RANI, gaji);
+      const milikBudi = await repository.create(BUDI, gojek);
+
+      expect(await repository.deleteAll(RANI, [a.id, milikBudi.id])).toBe(false);
+      // ROLLBACK: transaksi Rani yang sempat terkena DELETE kembali utuh.
+      expect(await repository.findById(RANI, a.id)).not.toBeNull();
+
+      expect(await repository.deleteAll(RANI, [a.id, b.id])).toBe(true);
+      expect((await repository.list(RANI, {}, firstPage)).items).toEqual([]);
+      expect(await repository.findById(BUDI, milikBudi.id)).not.toBeNull();
+    });
+
+    it("updateAll mengganti kategori semua baris, atau ROLLBACK kalau ada id yang tidak ada", async () => {
+      const a = await repository.create(RANI, gojek);
+      const b = await repository.create(RANI, gojek);
+
+      expect(await repository.updateAll(RANI, [a.id, "trx_tidak_ada"], { categoryId: "cat_expense_belanja" })).toBe(false);
+      expect((await repository.findById(RANI, a.id))?.category).toBe("Transportasi");
+
+      expect(await repository.updateAll(RANI, [a.id, b.id], { categoryId: "cat_expense_belanja" })).toBe(true);
+      const found = await repository.findManyByIds(RANI, [a.id, b.id]);
+      expect(found.map((t) => t.category)).toEqual(["Belanja", "Belanja"]);
+    });
+  });
 });
+
