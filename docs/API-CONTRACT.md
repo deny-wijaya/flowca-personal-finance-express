@@ -134,12 +134,12 @@ Field `created_at` dan `updated_at` belum dipakai frontend. Schema zod di fronte
 
 ### 4.1 Register (`POST /auth/register`)
 
-Dipanggil oleh `registerAction` di frontend saat pengguna menekan tombol **Daftar** di layar Daftar (`/register`). Field `confirm` (ulangi password) dan `terms` (persetujuan) hanya diperiksa di frontend dan tidak dikirim ke API.
+Dipanggil oleh `registerAction` di frontend saat pengguna menekan tombol **Daftar** di layar Daftar (`/register`). Field `confirm` (ulangi password) hanya diperiksa di frontend dan tidak dikirim ke API. Centang "Saya setuju dengan Syarat Layanan dan Kebijakan Privasi" dikirim sebagai `terms_accepted: true`, dan backend mencatat waktu persetujuannya di kolom `users.terms_accepted_at` sebagai bukti kalau suatu saat dibutuhkan.
 
 **Request**
 
 ```json
-{ "name": "Rani Putri", "email": "rani@email.com", "password": "rahasia123" }
+{ "name": "Rani Putri", "email": "rani@email.com", "password": "rahasia123", "terms_accepted": true }
 ```
 
 **Aturan validasi** (dicek ulang oleh backend, sama dengan `password-policy.ts` di frontend)
@@ -149,6 +149,7 @@ Dipanggil oleh `registerAction` di frontend saat pengguna menekan tombol **Dafta
 | `name` | Wajib, setelah di-trim minimal 1 dan maksimal 100 karakter |
 | `email` | Wajib, format email valid, maksimal 254 karakter. Disimpan dalam huruf kecil setelah di-trim, jadi `Rani@Email.com` dan `rani@email.com` dianggap email yang sama |
 | `password` | Wajib, minimal 8 dan maksimal 72 karakter, mengandung huruf dan angka, dan tidak mengandung kata "flowca" |
+| `terms_accepted` | Wajib bernilai `true`. Kalau tidak dikirim atau `false`, dibalas `400` dengan pesan "Kamu perlu menyetujui Syarat Layanan dan Kebijakan Privasi" di `details.fieldErrors.terms_accepted` |
 
 **Sukses: `201`**
 

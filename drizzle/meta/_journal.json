@@ -64,6 +64,13 @@
       "when": 1795533519029,
       "tag": "0008_budgets_table",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795537036798,
+      "tag": "0009_users_terms_accepted_at",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,7 @@ export class RegisterUser {
     if (await this.#users.findByEmail(email)) throw new EmailAlreadyRegisteredError();
 
     const passwordHash = await this.#hasher.hash(input.password);
-    return this.#users.create({ name: input.name.trim(), email, passwordHash });
+    // Persetujuan Syarat Layanan sudah dipastikan `true` oleh schema request; di sini waktunya dicatat.
+    return this.#users.create({ name: input.name.trim(), email, passwordHash, termsAcceptedAt: new Date() });
   }
 }

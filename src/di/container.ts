@@ -49,6 +49,8 @@ import { createDatabase } from "../shared/database/database.ts";
 export type ContainerOverrides = {
   /** Wajib diisi kalau ada repository yang tidak diberikan lewat overrides. */
   databaseUrl?: string;
+  /** Dipanggil saat koneksi idle di pool diputus Postgres (lihat createDatabase). main.ts mengisinya dengan logger. */
+  onDatabaseError?: (error: Error) => void;
   transactionRepository?: TransactionRepository;
   categoryRepository?: CategoryRepository;
   accountRepository?: AccountRepository;
@@ -72,7 +74,7 @@ export function createContainer(overrides: ContainerOverrides = {}) {
     !overrides.accountRepository ||
     !overrides.budgetRepository ||
     !overrides.userRepository;
-  const database = needsDatabase ? openDatabase(overrides.databaseUrl) : undefined;
+  const database = needsDatabase ? openDatabase(overrides.databaseUrl, overrides.onDatabaseError) : undefined;
   const transactionRepository =
     overrides.transactionRepository ?? new PostgresTransactionRepository(database!.db);
   const categoryRepository = overrides.categoryRepository ?? new PostgresCategoryRepository(database!.db);
@@ -133,11 +135,11 @@ function requireJwtSecret({ jwtSecret }: ContainerOverrides): string {
   return jwtSecret;
 }
 
-function openDatabase(databaseUrl: string | undefined) {
+function openDatabase(databaseUrl: string | undefined, onError: ((error: Error) => void) | undefined) {
   if (!databaseUrl) {
     throw new Error("createContainer butuh databaseUrl kalau ada repository yang tidak diberikan lewat overrides");
   }
-  return createDatabase(databaseUrl);
+  return createDatabase(databaseUrl, onError);
 }
 
 export type Container = ReturnType<typeof createContainer>;

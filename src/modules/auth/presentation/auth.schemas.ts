@@ -16,8 +16,11 @@ function nameSchema(requiredMessage: string) {
     .max(MAX_NAME_LENGTH, `Nama maksimal ${MAX_NAME_LENGTH} karakter`);
 }
 
+const TERMS_MESSAGE = "Kamu perlu menyetujui Syarat Layanan dan Kebijakan Privasi";
+
 export const registerBodySchema = z.object({
   name: nameSchema("Nama lengkap wajib diisi"),
+  terms_accepted: z.literal(true, { message: TERMS_MESSAGE }),
   email: z
     .string({ message: "Email wajib diisi" })
     .trim()

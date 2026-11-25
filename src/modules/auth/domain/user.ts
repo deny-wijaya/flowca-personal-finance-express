@@ -20,10 +20,12 @@ export type User = {
   /** Hasil hash argon2, bukan password asli. Tidak pernah dikirim ke response. */
   passwordHash: string;
   createdAt: Date;
+  /** Waktu menyetujui Syarat Layanan saat Daftar. null untuk user lama yang mendaftar sebelum ini dicatat. */
+  termsAcceptedAt: Date | null;
 };
 
 /** Data yang disimpan repository saat register. Id dan createdAt diisi oleh repository. */
-export type NewUser = Pick<User, "name" | "email" | "passwordHash">;
+export type NewUser = Pick<User, "name" | "email" | "passwordHash"> & { termsAcceptedAt: Date };
 
 /** Data mentah dari form Daftar. */
 export type Registration = { name: string; email: string; password: string };
