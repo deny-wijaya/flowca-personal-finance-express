@@ -29,6 +29,13 @@ describe("RegisterUser", () => {
     expect(user.passwordHash).not.toBe(rani.password);
   });
 
+  it("mencatat waktu persetujuan Syarat Layanan saat user dibuat", async () => {
+    const before = Date.now();
+    const user = await register.execute(rani);
+    expect(user.termsAcceptedAt).toBeInstanceOf(Date);
+    expect(user.termsAcceptedAt!.getTime()).toBeGreaterThanOrEqual(before);
+  });
+
   it("menormalisasi email dan merapikan nama", async () => {
     const user = await register.execute({ ...rani, name: "  Rani Putri ", email: " Rani@Email.COM " });
     expect(user.email).toBe("rani@email.com");

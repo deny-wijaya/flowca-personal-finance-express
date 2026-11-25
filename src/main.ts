@@ -7,6 +7,8 @@ import { createLogger } from "./shared/logger/logger.ts";
 const env = loadEnv();
 const logger = createLogger({ level: env.LOG_LEVEL, pretty: env.NODE_ENV === "development" });
 const container = createContainer({
+  // Koneksi ke Postgres yang putus dicatat sebagai warning; Express tetap hidup dan membalas 500 sampai Postgres kembali.
+  onDatabaseError: (error) => logger.warn({ err: error }, "Koneksi database terputus"),
   databaseUrl: env.DATABASE_URL,
   jwtSecret: env.JWT_SECRET,
   jwtExpiresIn: env.JWT_EXPIRES_IN,

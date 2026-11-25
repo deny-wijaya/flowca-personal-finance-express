@@ -14,7 +14,12 @@ describe.skipIf(!url)("PostgresUserRepository", () => {
   const { db, close } = createDatabase(url!);
   const repository = new PostgresUserRepository(db);
 
-  const rani: NewUser = { name: "Rani Putri", email: "rani@email.com", passwordHash: "$argon2id$contoh" };
+  const rani: NewUser = {
+    name: "Rani Putri",
+    email: "rani@email.com",
+    passwordHash: "$argon2id$contoh",
+    termsAcceptedAt: new Date("2026-11-25T03:00:00.000Z"),
+  };
 
   beforeEach(async () => {
     await db.delete(users);

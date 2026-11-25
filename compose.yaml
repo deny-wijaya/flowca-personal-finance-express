@@ -1,6 +1,9 @@
 services:
   postgres:
     image: postgres:18
+    # Container dijalankan lagi otomatis setelah Docker/Colima restart, kecuali kalau dimatikan manual
+    # dengan `docker compose stop`. Tanpa ini Postgres mati diam-diam dan login membalas 500.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: finance
       POSTGRES_PASSWORD: finance

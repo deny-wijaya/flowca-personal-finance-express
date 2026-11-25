@@ -11,4 +11,7 @@ export const users = pgTable("users", {
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  // Waktu user mencentang persetujuan Syarat Layanan saat Daftar. NULL untuk user yang mendaftar
+  // sebelum kolom ini ada, karena waktu persetujuan mereka tidak tercatat.
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
 });

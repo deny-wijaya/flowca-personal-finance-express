@@ -25,7 +25,7 @@ function buildApp() {
   return createApp({ container, logger: pino({ level: "silent" }), apiPrefix: "/api/v1", corsOrigins: [] });
 }
 
-const rani = { name: "Rani Putri", email: "rani@email.com", password: "rahasia123" };
+const rani = { name: "Rani Putri", email: "rani@email.com", password: "rahasia123", terms_accepted: true };
 
 describe("POST /api/v1/auth/register", () => {
   let app: ReturnType<typeof buildApp>;
@@ -68,7 +68,7 @@ describe("POST /api/v1/auth/register", () => {
   it("400 VALIDATION_ERROR per field kalau body kosong", async () => {
     const res = await request(app).post("/api/v1/auth/register").send({}).expect(400);
     expect(res.body.error.code).toBe("VALIDATION_ERROR");
-    expect(Object.keys(res.body.error.details.fieldErrors).sort()).toEqual(["email", "name", "password"]);
+    expect(Object.keys(res.body.error.details.fieldErrors).sort()).toEqual(["email", "name", "password", "terms_accepted"]);
   });
 
   it("400 untuk format email yang salah", async () => {
@@ -126,6 +126,17 @@ describe("POST /api/v1/auth/login", () => {
   it("400 VALIDATION_ERROR kalau email atau password kosong", async () => {
     const res = await request(app).post("/api/v1/auth/login").send({ email: "", password: "" }).expect(400);
     expect(Object.keys(res.body.error.details.fieldErrors).sort()).toEqual(["email", "password"]);
+  });
+});
+
+describe("POST /api/v1/auth/register persetujuan Syarat Layanan", () => {
+  it("menolak register tanpa terms_accepted atau dengan false", async () => {
+    const app = buildApp();
+    // undefined tidak ikut dikirim di JSON, jadi body pertama sama dengan body tanpa terms_accepted.
+    for (const body of [{ ...rani, terms_accepted: undefined }, { ...rani, terms_accepted: false }]) {
+      const res = await request(app).post("/api/v1/auth/register").send(body).expect(400);
+      expect(res.body.error.details.fieldErrors.terms_accepted).toEqual(["Kamu perlu menyetujui Syarat Layanan dan Kebijakan Privasi"]);
+    }
   });
 });
 

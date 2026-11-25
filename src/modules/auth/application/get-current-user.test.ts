@@ -6,7 +6,7 @@ import { GetCurrentUser } from "./get-current-user.ts";
 describe("GetCurrentUser", () => {
   it("mengembalikan user berdasarkan id dari token", async () => {
     const users = new InMemoryUserRepository();
-    const rani = await users.create({ name: "Rani Putri", email: "rani@email.com", passwordHash: "hash" });
+    const rani = await users.create({ name: "Rani Putri", email: "rani@email.com", passwordHash: "hash", termsAcceptedAt: new Date() });
     expect(await new GetCurrentUser(users).execute(rani.id)).toEqual(rani);
   });
 
